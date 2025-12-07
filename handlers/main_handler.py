@@ -11,9 +11,15 @@ from .user_to_admin import user_to_admin
 from .type_call.report import user_rep
 from .type_call.help import user_help
 from .common import common_router
+from .admin_ban import admin_ban_router
+from .user_ban_appeal import ban_appeal_router
 
 
 router = Router()
+
+router.include_router(common_router) 
+router.include_router(ban_appeal_router)
+router.include_router(admin_ban_router)
 
 router.include_router(router_reply)
 router.include_router(admin_to_user)
@@ -26,4 +32,3 @@ router.include_router(broad)
 router.include_router(user_to_admin)
 router.include_router(user_rep)
 router.include_router(user_help)
-router.include_router(common_router)

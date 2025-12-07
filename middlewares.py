@@ -1,15 +1,55 @@
-"""Посредник в в отправке фотографий"""
+"""Посредники (Middlewares)."""
 import asyncio
 from typing import Any, Awaitable, Callable, Dict, List
 from aiogram import BaseMiddleware
-from aiogram.types import Message, TelegramObject
+from aiogram.types import Message, TelegramObject, CallbackQuery
+
+from config import banned_ids
+from keyboards import get_banned_kb
+
+
+class BanMiddleware(BaseMiddleware):
+    """
+    Блокирует доступ забаненным пользователям.
+    Разрешает ТОЛЬКО нажатие кнопки апелляции.
+    """
+
+    async def __call__(
+        self,
+        handler: Callable[[TelegramObject, Dict[str, Any]], Awaitable[Any]],
+        event: TelegramObject,
+        data: Dict[str, Any],
+    ) -> Any:
+        
+        user = data.get("event_from_user")
+        if not user:
+            return await handler(event, data)
+
+        # Проверяем, есть ли ID в списке забаненных
+        if user.id in banned_ids:
+            
+            # Если это CallbackQuery (нажатие кнопки)
+            if isinstance(event, CallbackQuery):
+                # РАЗРЕШАЕМ только кнопку апелляции
+                if event.data == "banned_appeal":
+                    return await handler(event, data)
+                else:
+                    await event.answer("Вы забанены.", show_alert=True)
+                    return
+
+            if isinstance(event, Message):
+                await event.answer(
+                    "⛔ <b>Вы забанены.</b>\n"
+                    "Вы не можете использовать бота.",
+                    parse_mode="HTML",
+                    reply_markup=get_banned_kb()
+                )
+                return 
+
+        return await handler(event, data)
 
 
 class MediaGroupMiddleware(BaseMiddleware):
-    """
-    Для группировки фотографий и одновременной отправки
-    latency: время ожидания остальных фото
-    """
 
     def __init__(self, latency: float = 0.5):
         self.latency = latency

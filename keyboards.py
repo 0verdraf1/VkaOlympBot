@@ -70,14 +70,22 @@ def get_confirm_kb():
 
 def get_admin_panel_kb():
     """Админ-панель."""
-
     return ReplyKeyboardMarkup(
         keyboard=[
             [KeyboardButton(text="📢 Разослать всем")],
             [KeyboardButton(text="👤 Общение с участником")],
-            [KeyboardButton(text="⬅️ Назад в меню")],
+            [KeyboardButton(text="⛔ Бан участника"), KeyboardButton(text="✅ Разбан участника")],
+            [KeyboardButton(text="🏠 На главную")],
         ],
         resize_keyboard=True,
+    )
+
+
+def get_banned_kb():
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            [InlineKeyboardButton(text="📨 Обратиться к организаторам", callback_data="banned_appeal")]
+        ]
     )
 
 
