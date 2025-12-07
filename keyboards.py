@@ -10,13 +10,11 @@ from config import ADMIN_IDS
 
 def get_main_kb(user_id: int):
     """Панель участника олимпиады."""
-
     buttons = [
         [KeyboardButton(text="📝 Зарегистрироваться")],
         [KeyboardButton(text="🔐 Получить логин и пароль")],
         [KeyboardButton(text="🔔 Связь с организаторами")],
     ]
-
     if user_id in ADMIN_IDS:
         buttons.append([KeyboardButton(text="🦾 Админ-панель")])
 
@@ -24,61 +22,52 @@ def get_main_kb(user_id: int):
 
 
 def get_organizer_kb():
-    """В (Связь с организаторами)."""
-
     return InlineKeyboardMarkup(
         inline_keyboard=[
-            [
-                InlineKeyboardButton(
-                    text="👀 Сообщить о нарушении правил",
-                    callback_data="report_violation",
-                )
-            ],
-            [
-                InlineKeyboardButton(
-                    text="🆘 У меня проблема", callback_data="contact_support"
-                )
-            ],
+            [InlineKeyboardButton(text="👀 Сообщить о нарушении правил", callback_data="report_violation")],
+            [InlineKeyboardButton(text="🆘 У меня проблема", callback_data="contact_support")]
         ]
     )
 
 
 def get_admin_panel_kb():
-    """Админ-панель."""
-
+    """Админ-панель с кнопкой выхода."""
     return ReplyKeyboardMarkup(
         keyboard=[
             [KeyboardButton(text="📢 Разослать всем")],
             [KeyboardButton(text="👤 Общение с участником")],
-            [KeyboardButton(text="⬅️ Назад в меню")],
+            [KeyboardButton(text="🏠 На главную")], # <-- Важная кнопка
         ],
         resize_keyboard=True,
     )
 
 
 def get_admin_dialog_kb():
-    """Диалог админа с участником."""
-
+    """Диалог админа с участником. ТОЛЬКО завершение."""
     return ReplyKeyboardMarkup(
-        keyboard=[[KeyboardButton(text="❌ Закончить диалог")]],
+        keyboard=[
+            [KeyboardButton(text="❌ Закончить диалог")] 
+            # Кнопку "На главную" тут НЕ добавляем, как вы и просили
+        ],
         resize_keyboard=True
     )
 
+def get_cancel_kb():
+    """Клавиатура отмены действия."""
+    return ReplyKeyboardMarkup(
+        keyboard=[[KeyboardButton(text="🏠 На главную")]],
+        resize_keyboard=True
+    )
 
 def get_selection_kb(items, prefix):
-    """Генератор для списка УЗ и классов/курсов обучения."""
-
+    """Генератор для списка УЗ."""
     buttons = []
     row = []
-
     for item in items:
-        row.append(InlineKeyboardButton(
-            ext=item, callback_data=f"{prefix}_{item}")
-            )
+        row.append(InlineKeyboardButton(text=item, callback_data=f"{prefix}_{item}"))
         if len(row) == 2:
             buttons.append(row)
             row = []
     if row:
         buttons.append(row)
-
     return InlineKeyboardMarkup(inline_keyboard=buttons)

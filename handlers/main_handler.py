@@ -10,6 +10,7 @@ from .start_broadcast import broad
 from .user_to_admin import user_to_admin
 from .type_call.report import user_rep
 from .type_call.help import user_help
+from .common import common_router
 
 
 router = Router()
@@ -25,3 +26,4 @@ router.include_router(broad)
 router.include_router(user_to_admin)
 router.include_router(user_rep)
 router.include_router(user_help)
+router.include_router(common_router)
