@@ -37,7 +37,6 @@ async def forward_to_admin(
     """Рассылка проблем организаторам."""
     data = await state.get_data()
 
-    # --- ИЩЕМ ТЕКСТ ПОЛЬЗОВАТЕЛЯ ---
     user_text = ""
     if album:
         for msg in album:
@@ -50,13 +49,14 @@ async def forward_to_admin(
     if not user_text and not album and not message.photo and not message.document:
         user_text = "Без текста"
 
-    # Шапка сообщения для админа
+    # --- ФОРМИРОВАНИЕ ЗАГОЛОВКА ---
+    user_link = f"(@{message.from_user.username})" if message.from_user.username else "(Без username)"
+    
     header_text = (
         f"🆘 <b>ВОПРОС В ПОДДЕРЖКУ</b>\n"
-        f"От: ID {message.from_user.id} (@{message.from_user.username})\n\n"
+        f"От: ID <code>{message.from_user.id}</code> {user_link}\n\n"
     )
     
-    # Полный текст сообщения (Шапка + Текст юзера)
     full_text_msg = f"{header_text}Текст:\n{user_text}" if user_text else header_text + "Текст: (только медиа)"
 
     kb = InlineKeyboardMarkup(
@@ -69,9 +69,7 @@ async def forward_to_admin(
 
     for admin_id in ADMIN_IDS:
         try:
-            # 1. АЛЬБОМ
             if album:
-                # Сначала шлем альбом (без текста, чтобы не дублировать, или с текстом)
                 media_group = MediaGroupBuilder()
                 for msg in album:
                     if msg.photo: media_group.add_photo(media=msg.photo[-1].file_id)
@@ -80,18 +78,15 @@ async def forward_to_admin(
                 
                 await bot.send_media_group(chat_id=admin_id, media=media_group.build())
                 
-                # Затем шлем текст вопроса с кнопкой (чтобы кнопка была видна и работала)
                 sent_msg = await bot.send_message(
                     chat_id=admin_id,
-                    text=full_text_msg, # Текст вопроса здесь
+                    text=full_text_msg,
                     parse_mode="HTML",
                     reply_markup=kb
                 )
                 sent_messages_info.append((admin_id, sent_msg.message_id))
 
-            # 2. ФОТО/ДОКУМЕНТ (Одиночные)
             elif message.photo or message.document:
-                # Если одно фото - шлем фото с подписью и кнопкой
                 file_id = message.photo[-1].file_id if message.photo else message.document.file_id
                 method = bot.send_photo if message.photo else bot.send_document
                 
@@ -105,7 +100,6 @@ async def forward_to_admin(
                 )
                 sent_messages_info.append((admin_id, sent_msg.message_id))
 
-            # 3. ПРОСТО ТЕКСТ
             else:
                 sent_msg = await bot.send_message(
                     chat_id=admin_id,
@@ -118,7 +112,6 @@ async def forward_to_admin(
         except Exception as e:
             print(f"Ошибка при отправке админу {admin_id}: {e}")
 
-    # Сохранение и чистка
     if sent_messages_info:
         if message.from_user.id not in active_alerts:
             active_alerts[message.from_user.id] = []

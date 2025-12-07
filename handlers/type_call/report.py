@@ -1,11 +1,11 @@
 """Система подачи репортов."""
 import sys
 import os
+from typing import List
 from aiogram import F, types, Router
 from aiogram.fsm.context import FSMContext
 from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
 from aiogram.utils.media_group import MediaGroupBuilder
-from typing import List
 
 sys.path.append(os.path.join(os.path.dirname(__file__), '...'))
 from config import Report, bot, active_alerts, try_delete, ADMIN_IDS
@@ -17,10 +17,8 @@ user_rep = Router()
 
 @user_rep.callback_query(F.data == "report_violation")
 async def start_report(callback: types.CallbackQuery, state: FSMContext):
-    """Начало составления репорта. Ввод username нарушителя."""
-
+    """Начало составления репорта."""
     await state.set_state(Report.offender_username)
-
     await callback.message.edit_text(
         "Введите имя пользователя нарушителя (начинается с @):",
         reply_markup=None,
@@ -31,44 +29,35 @@ async def start_report(callback: types.CallbackQuery, state: FSMContext):
 
 @user_rep.message(Report.offender_username)
 async def process_report_username(message: types.Message, state: FSMContext):
-    """Ввод username и запрос описания нарушения."""
-
+    """Ввод username."""
     data = await state.get_data()
-
     if "last_bot_msg_id" in data:
         await try_delete(bot, message.chat.id, data["last_bot_msg_id"])
-
     await try_delete(bot, message.chat.id, message.message_id)
 
     if not message.text.startswith("@"):
-        msg = await message.answer
-        ("❌ Имя должно начинаться с @. Попробуйте снова:")
+        msg = await message.answer("❌ Имя должно начинаться с @. Попробуйте снова:")
         await state.update_data(last_bot_msg_id=msg.message_id)
         return
 
     await state.update_data(offender_username=message.text)
     await state.set_state(Report.description)
-
     msg = await message.answer("Опишите нарушение:")
     await state.update_data(last_bot_msg_id=msg.message_id)
 
 
 @user_rep.message(Report.description)
 async def process_report_desc(message: types.Message, state: FSMContext):
-    """Запрос доказательств к репорту."""
-
+    """Ввод описания."""
     data = await state.get_data()
-
     if "last_bot_msg_id" in data:
         await try_delete(bot, message.chat.id, data["last_bot_msg_id"])
     await try_delete(bot, message.chat.id, message.message_id)
 
     await state.update_data(description=message.text)
     await state.set_state(Report.proof)
-
     msg = await message.answer(
-        "Отправьте доказательства (фото, скриншот) или напишите 'нет', "
-        "если доказательств нет."
+        "Отправьте доказательства (фото, скриншот) или напишите 'нет'."
     )
     await state.update_data(last_bot_msg_id=msg.message_id)
 
@@ -79,25 +68,34 @@ async def process_report_proof(
     album: List[types.Message] = None
 ):
     """Рассылка репортов организаторам."""
-
     data = await state.get_data()
 
+    user_proof_text = ""
+    if album:
+        for msg in album:
+            if msg.caption:
+                user_proof_text = msg.caption
+                break
+    else:
+        user_proof_text = message.text or message.caption or ""
+
+    # --- ФОРМИРОВАНИЕ ЗАГОЛОВКА ---
+    user_link = f"(@{message.from_user.username})" if message.from_user.username else "(Без username)"
+    
     report_text = (
         f"🚨 <b>НОВЫЙ РЕПОРТ</b>\n"
-        f"От кого: ID {message.from_user.id} (@{message.from_user.username})\n"
+        f"От кого: ID <code>{message.from_user.id}</code> {user_link}\n"
         f"Нарушитель: {data['offender_username']}\n"
         f"Описание: {data['description']}"
     )
+    
+    if user_proof_text and user_proof_text.lower() != "нет":
+        report_text += f"\nДок-ва (текст): {user_proof_text}"
 
     kb = InlineKeyboardMarkup(
-        inline_keyboard=[
-            [
-                InlineKeyboardButton(
-                    text="💬 Ответить автору жалобы",
-                    callback_data=f"reply_{message.from_user.id}",
-                )
-            ]
-        ]
+        inline_keyboard=[[
+            InlineKeyboardButton(text="💬 Ответить автору жалобы", callback_data=f"reply_{message.from_user.id}")
+        ]]
     )
 
     sent_messages_info = []
@@ -105,21 +103,18 @@ async def process_report_proof(
     for admin_id in ADMIN_IDS:
         try:
             if album:
-                media_group = MediaGroupBuilder(
-                    caption="Приложенные доказательства:"
-                    )
+                media_group = MediaGroupBuilder()
                 for msg in album:
-                    if msg.photo:
-                        media_group.add_photo(media=msg.photo[-1].file_id)
-                await bot.send_media_group(
-                    chat_id=admin_id,
-                    media=media_group.build()
-                    )
+                    if msg.photo: media_group.add_photo(media=msg.photo[-1].file_id)
+                    elif msg.document: media_group.add_document(media=msg.document.file_id)
+                
+                await bot.send_media_group(chat_id=admin_id, media=media_group.build())
+                
                 sent_msg = await bot.send_message(
-                    chat_id=admin_id,
-                    text=report_text,
-                    parse_mode="HTML",
-                    reply_markup=kb,
+                    chat_id=admin_id, 
+                    text=report_text, 
+                    parse_mode="HTML", 
+                    reply_markup=kb
                 )
                 sent_messages_info.append((admin_id, sent_msg.message_id))
 
@@ -127,21 +122,16 @@ async def process_report_proof(
                 sent_msg = await bot.send_photo(
                     chat_id=admin_id,
                     photo=message.photo[-1].file_id,
-                    caption=report_text,
+                    caption=report_text, 
                     parse_mode="HTML",
-                    reply_markup=kb,
+                    reply_markup=kb
                 )
                 sent_messages_info.append((admin_id, sent_msg.message_id))
 
             else:
-                if message.text:
-                    text_proof = message.text
-                else:
-                    "Без доказательств"
-                full_text = f"{report_text}\nДоказательства: {text_proof}"
                 sent_msg = await bot.send_message(
                     chat_id=admin_id,
-                    text=full_text,
+                    text=report_text,
                     parse_mode="HTML",
                     reply_markup=kb
                 )
@@ -157,15 +147,11 @@ async def process_report_proof(
 
     if "last_bot_msg_id" in data:
         await try_delete(bot, message.chat.id, data["last_bot_msg_id"])
+        
     if album:
-        for msg in album:
-            await try_delete(bot, message.chat.id, msg.message_id)
+        for msg in album: await try_delete(bot, message.chat.id, msg.message_id)
     else:
         await try_delete(bot, message.chat.id, message.message_id)
 
     await state.clear()
-
-    await message.answer(
-        "Ваш репорт отправлен организаторам.",
-        reply_markup=get_main_kb(message.from_user.id),
-    )
+    await message.answer("Ваш репорт отправлен организаторам.", reply_markup=get_main_kb(message.from_user.id))

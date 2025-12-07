@@ -9,11 +9,11 @@ from aiogram import F, Router, types
 from aiogram.filters import Command
 from aiogram.fsm.context import FSMContext
 from sqlalchemy import select
-from aiogram.types import KeyboardButton, ReplyKeyboardMarkup
+from aiogram.types import FSInputFile # <--- НУЖНО ДОБАВИТЬ ЭТОТ ИМПОРТ
 
 sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
 from config import GRADES, SCHOOLS, bot, Registration, try_delete
-from keyboards import get_main_kb, get_selection_kb, get_cancel_kb
+from keyboards import get_main_kb, get_selection_kb, get_cancel_kb, get_agreement_kb, get_confirm_kb
 from models import User, async_session
 
 
@@ -36,13 +36,13 @@ async def cmd_start(message: types.Message):
     )
 
 
-# --- ВАЖНО: ЭТОТ ХЕНДЛЕР ДОЛЖЕН БЫТЬ ВЫШЕ ОСТАЛЬНЫХ ---
-# Он перехватывает нажатие "На главную" в любом состоянии регистрации
+# --- ХЕНДЛЕР ОТМЕНЫ (стоит первым) ---
 @registration.message(Registration.full_name, F.text == "🏠 На главную")
 @registration.message(Registration.phone, F.text == "🏠 На главную")
 @registration.message(Registration.school, F.text == "🏠 На главную")
 @registration.message(Registration.grade, F.text == "🏠 На главную")
 @registration.message(Registration.email, F.text == "🏠 На главную")
+@registration.message(Registration.waiting_for_agreement, F.text == "🏠 На главную") # Добавили
 @registration.message(Registration.confirm, F.text == "🏠 На главную")
 async def cancel_registration(message: types.Message, state: FSMContext):
     """Отмена регистрации и выход в меню."""
@@ -52,7 +52,6 @@ async def cancel_registration(message: types.Message, state: FSMContext):
         "🏠 Регистрация прервана. Вы вернулись в главное меню.",
         reply_markup=get_main_kb(message.from_user.id)
     )
-# --------------------------------------------------------
 
 
 @registration.message(F.text == "📝 Зарегистрироваться")
@@ -83,12 +82,10 @@ async def start_register(message: types.Message, state: FSMContext):
 @registration.message(Registration.full_name)
 async def process_name(message: types.Message, state: FSMContext):
     """Сохранение Ф.И.О. и ввод номера телефона."""
-    
     data = await state.get_data()
 
     if "last_bot_msg_id" in data:
         await try_delete(bot, message.chat.id, data["last_bot_msg_id"])
-
     await try_delete(bot, message.chat.id, message.message_id)
 
     await state.update_data(full_name=message.text)
@@ -98,20 +95,17 @@ async def process_name(message: types.Message, state: FSMContext):
         "Введите номер телефона в формате +7 (999) 000-00-00:",
         reply_markup=get_cancel_kb()
     )
-
     await state.update_data(last_bot_msg_id=msg.message_id)
 
 
 @registration.message(Registration.phone)
 async def process_phone(message: types.Message, state: FSMContext):
     """Проверка введенного телефона и сохранение, ввод уч.зав."""
-    
     data = await state.get_data()
     pattern = r"^\+7 \(\d{3}\) \d{3}-\d{2}-\d{2}$"
 
     if not re.match(pattern, message.text):
         await try_delete(bot, message.chat.id, message.message_id)
-        
         if "last_bot_msg_id" in data:
             await try_delete(bot, message.chat.id, data["last_bot_msg_id"])
 
@@ -130,8 +124,6 @@ async def process_phone(message: types.Message, state: FSMContext):
     await state.update_data(phone=message.text)
     await state.set_state(Registration.school)
 
-    # Важно: здесь мы отправляем Selection KB, но у пользователя может остаться возможность ввода текста
-    # "На главную" будет перехвачено верхним хендлером
     msg = await message.answer(
         "Выберите учебное заведение:",
         reply_markup=get_selection_kb(SCHOOLS[:10], "school"),
@@ -142,7 +134,6 @@ async def process_phone(message: types.Message, state: FSMContext):
 @registration.callback_query(Registration.school, F.data.startswith("school_"))
 async def process_school(callback: types.CallbackQuery, state: FSMContext):
     """Сохранение уч.зав. и выбор класса/курса."""
-    
     school_name = callback.data.split("_")[1]
     await state.update_data(school=school_name)
     await state.set_state(Registration.grade)
@@ -156,16 +147,10 @@ async def process_school(callback: types.CallbackQuery, state: FSMContext):
 @registration.callback_query(Registration.grade, F.data.startswith("grade_"))
 async def process_grade(callback: types.CallbackQuery, state: FSMContext):
     """Сохранение класса/курса и ввод эл.почты."""
-    
     grade_name = callback.data.split("_")[1]
     await state.update_data(grade=grade_name)
     await state.set_state(Registration.email)
 
-    # При переходе к вводу текста снова показываем кнопку "На главную"
-    # Т.к. предыдущее сообщение было edit_text с инлайн кнопками,
-    # нам нужно отправить новое сообщение с Reply-клавиатурой (кнопкой снизу)
-    
-    # Удаляем старое инлайн сообщение, чтобы было чисто
     await try_delete(bot, callback.message.chat.id, callback.message.message_id)
     
     msg = await callback.message.answer(
@@ -177,48 +162,78 @@ async def process_grade(callback: types.CallbackQuery, state: FSMContext):
 
 @registration.message(Registration.email)
 async def process_email(message: types.Message, state: FSMContext):
-    """Проверка эл.почты и подтверждение введенных данных."""
-    
+    """Проверка эл.почты и переход к СОГЛАШЕНИЮ."""
     data = await state.get_data()
 
     if "@" not in message.text or "." not in message.text:
         await try_delete(bot, message.chat.id, message.message_id)
-        # Можно отправить уведомление об ошибке
         return
 
     await state.update_data(email=message.text)
-    await state.set_state(Registration.confirm)
+    
+    # --- ПЕРЕХОД К СОГЛАШЕНИЮ ---
+    await state.set_state(Registration.waiting_for_agreement)
 
     await try_delete(bot, message.chat.id, message.message_id)
-
     if "last_bot_msg_id" in data:
         await try_delete(bot, message.chat.id, data["last_bot_msg_id"])
 
-    kb = ReplyKeyboardMarkup(
-        keyboard=[
-            [KeyboardButton(text="Подтвердить введенные данные")],
-            [KeyboardButton(text="🏠 На главную")]
-        ],
-        resize_keyboard=True,
-    )
-    msg = await message.answer(
-        "Все данные заполнены. Нажмите кнопку ниже.", reply_markup=kb
+    # Показываем данные пользователя для проверки
+    user_data_msg = (
+        "<b>Проверьте ваши данные:</b>\n"
+        f"ФИО: {data.get('full_name')}\n"
+        f"Телефон: {data.get('phone')}\n"
+        f"Уч. заведение: {data.get('school')}\n"
+        f"Класс/Курс: {data.get('grade')}\n"
+        f"Email: {message.text}\n\n"
+        "Для продолжения необходимо ознакомиться и принять согласие на обработку персональных данных."
     )
 
+    msg = await message.answer(
+        user_data_msg, 
+        reply_markup=get_agreement_kb(),
+        parse_mode="HTML"
+    )
     await state.update_data(last_bot_msg_id=msg.message_id)
 
 
-@registration.message(
-    Registration.confirm,
-    F.text == "Подтвердить введенные данные"
-)
+@registration.message(Registration.waiting_for_agreement, F.text == "📄 Согласие на обработку персональных данных")
+async def send_agreement_file(message: types.Message):
+    """Отправляет PDF файл с соглашением."""
+    try:
+        # Файл должен лежать в корне проекта!
+        pdf_file = FSInputFile("Соглашение.pdf")
+        await message.answer_document(pdf_file, caption="Пожалуйста, ознакомьтесь с соглашением.")
+    except Exception as e:
+        await message.answer("⚠️ Файл соглашения не найден. Обратитесь к организаторам.")
+        print(f"Ошибка отправки файла: {e}")
+
+
+@registration.message(Registration.waiting_for_agreement, F.text == "✅ Я принимаю условия")
+async def accept_agreement(message: types.Message, state: FSMContext):
+    """Переход к финальному подтверждению."""
+    data = await state.get_data()
+    
+    await try_delete(bot, message.chat.id, message.message_id)
+    if "last_bot_msg_id" in data:
+        await try_delete(bot, message.chat.id, data["last_bot_msg_id"])
+
+    await state.set_state(Registration.confirm)
+    
+    msg = await message.answer(
+        "Условия приняты. Нажмите кнопку ниже для завершения регистрации.",
+        reply_markup=get_confirm_kb()
+    )
+    await state.update_data(last_bot_msg_id=msg.message_id)
+
+
+@registration.message(Registration.confirm, F.text == "🚀 Подтвердить введенные данные")
 async def finish_registration(message: types.Message, state: FSMContext):
-    """Сохранение данных в БД, вывод финального сообщения."""
+    """Сохранение данных в БД."""
     
     data = await state.get_data()
 
     await try_delete(bot, message.chat.id, message.message_id)
-
     if "last_bot_msg_id" in data:
         await try_delete(bot, message.chat.id, data["last_bot_msg_id"])
 
@@ -240,7 +255,7 @@ async def finish_registration(message: types.Message, state: FSMContext):
             new_user.plain_password = pwd
             await session.commit()
     except Exception as e:
-        await message.answer(f"Ошибка БД: {e}")
+        await message.answer(f"Ошибка сохранения в БД: {e}")
         return
 
     await state.clear()

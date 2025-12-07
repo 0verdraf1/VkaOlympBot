@@ -46,6 +46,7 @@ class Registration(StatesGroup):
     school = State()
     grade = State()
     email = State()
+    waiting_for_agreement = State()
     confirm = State()
 
 
@@ -70,6 +71,7 @@ class AdminPanel(StatesGroup):
 
     waiting_for_broadcast_content = State()
     waiting_for_user_search = State()
+    waiting_for_user_id = State()
     in_dialog = State()
 
 

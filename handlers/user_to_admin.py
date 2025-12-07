@@ -33,16 +33,20 @@ async def user_message_proxy(
         await state.clear()
         return
 
-    # Формируем имя
-    name_part = f"@{message.from_user.username}" if message.from_user.username else f"ID {user_id}"
-    prefix = f"<b>Участник ({name_part}):</b>\n"
+    # --- ФОРМИРОВАНИЕ ПОДПИСИ ---
+    if message.from_user.username:
+        user_sign = f"@{message.from_user.username}"
+    else:
+        # ID в теге code для копирования по клику
+        user_sign = f"ID <code>{user_id}</code>"
+    
+    prefix = f"<b>Участник ({user_sign}):</b>\n"
 
     try:
         # 1. АЛЬБОМ
         if album:
             media_group = MediaGroupBuilder()
             
-            # Ищем текст во всем альбоме
             found_caption = None
             for msg in album:
                 if msg.caption:
