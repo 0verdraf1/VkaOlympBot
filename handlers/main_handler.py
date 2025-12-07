@@ -17,18 +17,23 @@ from .user_ban_appeal import ban_appeal_router
 
 router = Router()
 
+# 1. СИСТЕМНЫЕ И ПРИОРИТЕТНЫЕ (Выход, Бан, Апелляция)
 router.include_router(common_router) 
 router.include_router(ban_appeal_router)
 router.include_router(admin_ban_router)
 
-router.include_router(router_reply)
+# 2. ДИАЛОГИ (ВАЖНО: они должны быть ВЫШЕ обычных команд)
+# Чтобы текст "Зарегистрироваться" от участника в диалоге улетал админу, а не боту
 router.include_router(admin_to_user)
+router.include_router(user_to_admin) # <--- ПЕРЕМЕСТИЛИ СЮДА (БЫЛО ВНИЗУ)
+router.include_router(router_reply)
+
+# 3. ОСНОВНОЙ ФУНКЦИОНАЛ
 router.include_router(call)
 router.include_router(get_creds)
 router.include_router(registration)
 router.include_router(search)
 router.include_router(start_admin)
 router.include_router(broad)
-router.include_router(user_to_admin)
 router.include_router(user_rep)
 router.include_router(user_help)

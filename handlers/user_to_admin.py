@@ -39,7 +39,7 @@ async def user_message_proxy(
     else:
         # ID в теге code для копирования по клику
         user_sign = f"ID <code>{user_id}</code>"
-    
+
     prefix = f"<b>Участник ({user_sign}):</b>\n"
 
     try:

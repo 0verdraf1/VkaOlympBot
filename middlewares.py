@@ -4,14 +4,26 @@ from typing import Any, Awaitable, Callable, Dict, List
 from aiogram import BaseMiddleware
 from aiogram.types import Message, TelegramObject, CallbackQuery
 
-from config import banned_ids
+from config import banned_ids, active_dialogs
 from keyboards import get_banned_kb
 
+# Тексты кнопок, которые нельзя нажимать в бане (даже в диалоге)
+BLOCKED_BUTTONS = [
+    "📝 Зарегистрироваться",
+    "🔐 Получить логин и пароль",
+    "🔔 Связь с организаторами",
+    "🦾 Админ-панель",
+    "🏠 На главную",
+    "👀 Сообщить о нарушении правил",
+    "🆘 У меня проблема"
+]
 
 class BanMiddleware(BaseMiddleware):
     """
     Блокирует доступ забаненным пользователям.
-    Разрешает ТОЛЬКО нажатие кнопки апелляции.
+    Разрешает:
+    1. Нажатие кнопки апелляции (если диалога нет).
+    2. Отправку ОБЫЧНЫХ сообщений (не кнопок) в диалоге с админом.
     """
 
     async def __call__(
@@ -28,13 +40,34 @@ class BanMiddleware(BaseMiddleware):
         # Проверяем, есть ли ID в списке забаненных
         if user.id in banned_ids:
             
-            # Если это CallbackQuery (нажатие кнопки)
+            # --- СЦЕНАРИЙ 1: Пользователь в активном диалоге с админом ---
+            if user.id in active_dialogs:
+                
+                # Если он пытается нажать Инлайн-кнопку
+                if isinstance(event, CallbackQuery):
+                    await event.answer(
+                        "⛔ Вы забанены и находитесь в диалоге с организатором.", 
+                        show_alert=True
+                    )
+                    return 
+                
+                # Если он нажимает Текстовую кнопку (Reply)
+                if isinstance(event, Message) and event.text in BLOCKED_BUTTONS:
+                    await event.answer(
+                        "⛔ Вы забанены и находитесь в диалоге с организатором."
+                    )
+                    return
+
+                # Если это обычное сообщение (текст/фото) - ПРОПУСКАЕМ (пусть летит админу)
+                return await handler(event, data)
+
+            # --- СЦЕНАРИЙ 2: Диалога нет (обычный бан) ---
             if isinstance(event, CallbackQuery):
                 # РАЗРЕШАЕМ только кнопку апелляции
                 if event.data == "banned_appeal":
                     return await handler(event, data)
                 else:
-                    await event.answer("Вы забанены.", show_alert=True)
+                    await event.answer("⛔ Вы забанены.", show_alert=True)
                     return
 
             if isinstance(event, Message):
@@ -50,7 +83,7 @@ class BanMiddleware(BaseMiddleware):
 
 
 class MediaGroupMiddleware(BaseMiddleware):
-
+    # (Без изменений)
     def __init__(self, latency: float = 0.5):
         self.latency = latency
         self.album_data: Dict[str, List[Message]] = {}

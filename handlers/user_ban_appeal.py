@@ -13,6 +13,16 @@ ban_appeal_router = Router()
 async def process_ban_appeal(callback: types.CallbackQuery):
     """Забаненный нажимает кнопку связи."""
     
+    # --- ПРОВЕРКА НА СПАМ ---
+    # Если пользователь уже отправлял запрос и на него еще не ответили
+    if callback.from_user.id in active_alerts:
+        await callback.answer(
+            "⏳ Ваш запрос уже отправлен.\nОжидайте, пока организатор свяжется с вами.",
+            show_alert=True
+        )
+        return
+    # ------------------------
+
     await callback.message.answer(
         "Ваше сообщение будет рассмотрено, организаторы свяжутся с вами в этом чате."
     )
@@ -48,6 +58,8 @@ async def process_ban_appeal(callback: types.CallbackQuery):
         except Exception:
             pass
 
+    # Сохраняем алерт. Теперь наличие записи в active_alerts
+    # будет блокировать повторную отправку до ответа админа.
     if sent_messages_info:
         if user.id not in active_alerts:
             active_alerts[user.id] = []

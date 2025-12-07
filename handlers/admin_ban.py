@@ -1,8 +1,10 @@
 """Логика бана и разбана участников."""
 import sys
 import os
+from typing import List
 from aiogram import F, types, Router
 from aiogram.fsm.context import FSMContext
+from aiogram.utils.media_group import MediaGroupBuilder
 from sqlalchemy import select, update
 from sqlalchemy.dialects.postgresql import insert
 
@@ -11,7 +13,7 @@ from config import (
     AdminBanSystem, 
     bot, 
     ADMIN_IDS, 
-    banned_ids, # Импортируем глобальный кэш
+    banned_ids, 
 )
 from keyboards import get_admin_panel_kb, get_search_method_kb
 from models import User, BannedUser, async_session
@@ -77,7 +79,14 @@ async def check_and_proceed_ban(message: types.Message, state: FSMContext, user_
     # Сохраняем найденного юзера
     await state.update_data(target_user=user)
     await state.set_state(AdminBanSystem.waiting_for_ban_reason)
-    await message.answer(f"Пользователь найден: {user.full_name} (ID: {user.telegram_id})\n\nВведите <b>Причину бана</b>:", parse_mode="HTML")
+    
+    user_sign = f"@{user.username}" if user.username else "(Без username)"
+    await message.answer(
+        f"Пользователь найден: <b>{user.full_name}</b>\n"
+        f"ID: <code>{user.telegram_id}</code> {user_sign}\n\n"
+        "Введите <b>Причину бана</b>:", 
+        parse_mode="HTML"
+    )
 
 # --- Причина бана ---
 @admin_ban_router.message(AdminBanSystem.waiting_for_ban_reason)
@@ -88,52 +97,125 @@ async def process_ban_reason(message: types.Message, state: FSMContext):
 
 # --- Доказательства и ФИНАЛ ---
 @admin_ban_router.message(AdminBanSystem.waiting_for_ban_proof, F.text | F.photo)
-async def process_ban_finish(message: types.Message, state: FSMContext):
+async def process_ban_finish(
+    message: types.Message, 
+    state: FSMContext,
+    album: List[types.Message] = None
+):
     data = await state.get_data()
     target_user: User = data['target_user']
     reason = data['ban_reason']
     
-    # Обработка доказательств
-    proof = "Текст: " + message.text if message.text else f"Photo ID: {message.photo[-1].file_id}"
-    if message.caption: proof += f" | Caption: {message.caption}"
+    # 1. ОБРАБОТКА ДОКАЗАТЕЛЬСТВ ДЛЯ БД И АЛЕРТА
+    proof_db = ""
+    proof_text_for_alert = "" # Текст (подпись), который ввел админ при бане
 
-    admin_info = f"@{message.from_user.username}, ID_{message.from_user.id}"
+    if album:
+        # Если это альбом, собираем инфу о файлах
+        file_ids = [m.photo[-1].file_id for m in album if m.photo]
+        proof_db = f"Album ({len(file_ids)} photos): {', '.join(file_ids)}"
+        
+        # Ищем текст (подпись) в альбоме
+        for msg in album:
+            if msg.caption:
+                proof_text_for_alert = msg.caption
+                proof_db += f" | Caption: {msg.caption}"
+                break
+    elif message.photo:
+        proof_db = f"Photo ID: {message.photo[-1].file_id}"
+        if message.caption:
+            proof_text_for_alert = message.caption
+            proof_db += f" | Caption: {message.caption}"
+    elif message.text:
+        proof_text_for_alert = message.text
+        proof_db = f"Text: {message.text}"
 
+    # Если текста доказательств нет, пишем дефолтное
+    if not proof_text_for_alert:
+        proof_text_for_alert = "(Без текстового описания, только медиа)"
+
+    admin_username = f"@{message.from_user.username}" if message.from_user.username else "(Без username)"
+    admin_info = f"{admin_username}, ID <code>{message.from_user.id}</code>"
+    admin_info_db = f"@{message.from_user.username}, ID {message.from_user.id}"
+
+    # 2. ЗАПИСЬ В БД
     async with async_session() as session:
-        # 1. Обновляем статус в таблице users
+        # Обновляем статус в таблице users
         stmt = update(User).where(User.id == target_user.id).values(is_banned=True)
         await session.execute(stmt)
 
-        # 2. Upsert в таблицу users_banned (Создаем или Обновляем)
-        # Если юзер уже был забанен ранее, мы обновим причину и админа
+        # Upsert в таблицу users_banned
         banned_user_data = {
             "user_id": target_user.telegram_id,
             "username": target_user.username,
             "reason": reason,
-            "admin_who_banned": admin_info,
-            "proof": proof,
-            "admin_who_unbanned": None # Сбрасываем разбан, так как баним снова
+            "admin_who_banned": admin_info_db,
+            "proof": proof_db,
+            "admin_who_unbanned": None
         }
         
-        # PostgreSQL UPSERT
         insert_stmt = insert(BannedUser).values(**banned_user_data)
         do_update_stmt = insert_stmt.on_conflict_do_update(
-            index_elements=['user_id'], # Поле, по которому ищем дубликаты
-            set_=banned_user_data # Обновляем все поля новыми данными
+            index_elements=['user_id'],
+            set_=banned_user_data
         )
         await session.execute(do_update_stmt)
         await session.commit()
 
-    # 3. Обновляем кэш в памяти
+    # Обновляем кэш
     banned_ids.add(target_user.telegram_id)
 
+    # 3. ОТПРАВКА АЛЕРТА ВСЕМ АДМИНАМ
+    target_user_sign = f"@{target_user.username}" if target_user.username else "(Без username)"
+    
+    ban_alert = (
+        f"⛔ <b>ЗАБАНЕН УЧАСТНИК</b>\n\n"
+        f"👤 <b>ФИО:</b> {target_user.full_name}\n"
+        f"🆔 <b>ID:</b> <code>{target_user.telegram_id}</code>\n"
+        f"📧 <b>Username:</b> {target_user_sign}\n\n"
+        f"📝 <b>Причина:</b> {reason}\n"
+        f"👮‍♂️ <b>Кто забанил:</b> {admin_info}\n"
+        f"📂 <b>Доказательства:</b> {proof_text_for_alert}"
+    )
+
+    for admin_id in ADMIN_IDS:
+        try:
+            # А) АЛЬБОМ
+            if album:
+                media_group = MediaGroupBuilder()
+                first = True
+                for msg in album:
+                    # Прикрепляем текст алерта к первому фото
+                    caption = ban_alert if first else None
+                    if msg.photo:
+                        media_group.add_photo(media=msg.photo[-1].file_id, caption=caption, parse_mode="HTML")
+                    elif msg.document:
+                        media_group.add_document(media=msg.document.file_id, caption=caption, parse_mode="HTML")
+                    first = False
+                await bot.send_media_group(chat_id=admin_id, media=media_group.build())
+
+            # Б) ОДИНОЧНОЕ ФОТО
+            elif message.photo:
+                await bot.send_photo(
+                    chat_id=admin_id, 
+                    photo=message.photo[-1].file_id, 
+                    caption=ban_alert, # Текст алерта в подписи
+                    parse_mode="HTML"
+                )
+
+            # В) ПРОСТО ТЕКСТ
+            else:
+                await bot.send_message(chat_id=admin_id, text=ban_alert, parse_mode="HTML")
+        except Exception:
+            pass
+
     await message.answer(
-        f"✅ Пользователь <b>{target_user.full_name}</b> (ID {target_user.telegram_id}) успешно <b>ЗАБАНЕН</b>.",
-        parse_mode="HTML",
-        reply_markup=get_admin_panel_kb()
+        f"✅ Пользователь <b>{target_user.full_name}</b> успешно забанен.\nУведомление отправлено всем администраторам.",
+        reply_markup=get_admin_panel_kb(),
+        parse_mode="HTML"
     )
     
-    # Пытаемся уведомить пользователя (если он не заблочил бота)
+    # Уведомляем пользователя
     try:
         await bot.send_message(target_user.telegram_id, "⛔ <b>Вы были забанены администратором.</b>", parse_mode="HTML")
     except: pass
@@ -176,10 +258,12 @@ async def process_unban_username(message: types.Message, state: FSMContext):
     await process_unban_final(message, state, username=username)
 
 async def process_unban_final(message: types.Message, state: FSMContext, user_id=None, username=None):
-    admin_info = f"@{message.from_user.username}, ID_{message.from_user.id}"
+    admin_username = f"@{message.from_user.username}" if message.from_user.username else "(Без username)"
+    admin_info = f"{admin_username}, ID <code>{message.from_user.id}</code>"
+    
+    admin_info_db = f"@{message.from_user.username}, ID {message.from_user.id}"
 
     async with async_session() as session:
-        # Ищем юзера
         query = select(User)
         if user_id: query = query.where(User.telegram_id == user_id)
         else: query = query.where(User.username == username)
@@ -192,27 +276,39 @@ async def process_unban_final(message: types.Message, state: FSMContext, user_id
             await state.clear()
             return
 
-        # 1. Снимаем бан в users
         user.is_banned = False
-        
-        # 2. Обновляем инфу в users_banned (кто разбанил)
         stmt = update(BannedUser).where(BannedUser.user_id == user.telegram_id).values(
-            admin_who_unbanned=admin_info
+            admin_who_unbanned=admin_info_db
         )
         await session.execute(stmt)
         await session.commit()
 
-        # 3. Убираем из кэша
         if user.telegram_id in banned_ids:
             banned_ids.remove(user.telegram_id)
 
+    # Алерт о разбане
+    user_sign = f"@{user.username}" if user.username else "(Без username)"
+    unban_alert = (
+        f"✅ <b>РАЗБАНЕН УЧАСТНИК</b>\n\n"
+        f"👤 <b>ФИО:</b> {user.full_name}\n"
+        f"🆔 <b>ID:</b> <code>{user.telegram_id}</code>\n"
+        f"📧 <b>Username:</b> {user_sign}\n\n"
+        f"👮‍♂️ <b>Кто разбанил:</b> {admin_info}"
+    )
+
+    for admin_id in ADMIN_IDS:
+        try:
+            await bot.send_message(chat_id=admin_id, text=unban_alert, parse_mode="HTML")
+        except Exception:
+            pass
+
     await message.answer(
-        f"✅ Пользователь <b>{user.full_name}</b> успешно <b>РАЗБАНЕН</b>.",
+        f"✅ Пользователь <b>{user.full_name}</b> успешно разбанен.",
         parse_mode="HTML",
         reply_markup=get_admin_panel_kb()
     )
     try:
         await bot.send_message(user.telegram_id, "✅ <b>Вы были разбанены!</b> Доступ восстановлен.", parse_mode="HTML")
     except: pass
-
+    
     await state.clear()
