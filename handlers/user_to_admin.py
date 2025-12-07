@@ -23,8 +23,9 @@ async def user_message_proxy(
     """Проксирование сообщений участника админу."""
 
     user_id = message.from_user.id
-    target_admin_id = active_dialogs.get(user_id)
+    if message.text == "🏠 На главную": return
 
+    target_admin_id = active_dialogs.get(user_id)
     if not target_admin_id:
         await message.answer(
             "Связь прервана. Ожидайте сообщения от организатора."
@@ -32,31 +33,40 @@ async def user_message_proxy(
         await state.clear()
         return
 
-    prefix = f"<b>Участник (@{message.from_user.username}):</b> "
+    # Формируем имя
+    name_part = f"@{message.from_user.username}" if message.from_user.username else f"ID {user_id}"
+    prefix = f"<b>Участник ({name_part}):</b>\n"
 
     try:
+        # 1. АЛЬБОМ
         if album:
             media_group = MediaGroupBuilder()
+            
+            # Ищем текст во всем альбоме
+            found_caption = None
+            for msg in album:
+                if msg.caption:
+                    found_caption = msg.caption
+                    break
+            
+            final_caption = f"{prefix}{found_caption}" if found_caption else prefix
+
             first = True
             for msg in album:
-
-                text = msg.caption or ""
-
-                if first:
-                    caption = f"{prefix}{text}"
-                    first = False
-                else:
-                    caption = text
-
+                caption_to_send = final_caption if first else None
+                
                 if msg.photo:
-                    media_group.add_photo(media=msg.photo[-1].file_id, caption=caption, parse_mode="HTML")
+                    media_group.add_photo(media=msg.photo[-1].file_id, caption=caption_to_send, parse_mode="HTML")
                 elif msg.document:
-                    media_group.add_document(media=msg.document.file_id, caption=caption, parse_mode="HTML")
-
-            # Отправляем альбом. Кнопки к альбомам крепить нельзя, поэтому шлем их отдельным сообщением или надеемся на старые.
+                    media_group.add_document(media=msg.document.file_id, caption=caption_to_send, parse_mode="HTML")
+                elif msg.video:
+                    media_group.add_video(media=msg.video.file_id, caption=caption_to_send, parse_mode="HTML")
+                first = False
+            
             await bot.send_media_group(target_admin_id, media=media_group.build())
             return
 
+        # 2. ОБЫЧНОЕ
         if message.text:
             await bot.send_message(
                 target_admin_id,
@@ -66,23 +76,19 @@ async def user_message_proxy(
             )
         elif message.photo:
             text = message.caption or ""
-            caption = f"{prefix}{text}"
-
             await bot.send_photo(
                 target_admin_id,
                 message.photo[-1].file_id,
-                caption=caption,
+                caption=f"{prefix}{text}",
                 parse_mode="HTML",
                 reply_markup=get_admin_dialog_kb(),
             )
         elif message.document:
             text = message.caption or ""
-            caption = f"{prefix}{text}"
-
             await bot.send_document(
                 target_admin_id,
                 message.document.file_id,
-                caption=caption,
+                caption=f"{prefix}{text}",
                 parse_mode="HTML",
                 reply_markup=get_admin_dialog_kb(),
             )

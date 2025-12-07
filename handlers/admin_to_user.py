@@ -18,7 +18,7 @@ admin_to_user = Router()
 @admin_to_user.message(AdminPanel.in_dialog)
 async def admin_message_proxy(
     message: types.Message, 
-    state: FSMContext,
+    state: FSMContext, 
     album: List[types.Message] = None
 ):
     """Проксирование сообщений админа участнику (текст, фото, альбомы)."""
@@ -26,7 +26,7 @@ async def admin_message_proxy(
     data = await state.get_data()
     user_id = data.get("dialog_user_id")
 
-    # --- 1. ВЫХОД ИЗ ДИАЛОГА ---
+    # --- ВЫХОД ИЗ ДИАЛОГА ---
     if message.text == "❌ Закончить диалог":
         if user_id in active_dialogs:
             del active_dialogs[user_id]
@@ -55,83 +55,82 @@ async def admin_message_proxy(
                 pass
         return
 
-    # Защита от кнопки "На главную" (если она вдруг есть)
     if message.text == "🏠 На главную":
         return
 
-    # --- 2. ПЕРЕСЫЛКА СООБЩЕНИЙ ---
+    # --- ПЕРЕСЫЛКА ---
     if user_id:
         try:
-            prefix = "<b>Организатор:</b> "
+            prefix = "<b>Организатор:</b>\n"
             
-            # А) ЕЛСИ ЭТО АЛЬБОМ (ГРУППА ФОТО)
+            # 1. АЛЬБОМ
             if album:
                 media_group = MediaGroupBuilder()
-                # Мы хотим добавить префикс только к первому сообщению в альбоме
-                # или к тому, где есть текст.
-                first = True 
                 
+                # --- ИЩЕМ ТЕКСТ ВО ВСЕМ АЛЬБОМЕ ---
+                found_caption = None
                 for msg in album:
-                    # Ищем подпись (если она есть)
-                    text = msg.caption or ""
-                    
-                    # Если это первое фото в альбоме, добавляем префикс
-                    if first:
-                        caption = f"{prefix}{text}"
-                        first = False
-                    else:
-                        caption = text  # К остальным фото префикс не лепим, чтобы не спамить
+                    if msg.caption:
+                        found_caption = msg.caption
+                        break # Нашли - выходим
+                
+                # Формируем итоговую подпись
+                final_caption = f"{prefix}{found_caption}" if found_caption else prefix
 
+                # Собираем альбом
+                first = True
+                for msg in album:
+                    # Подпись лепим только к первому элементу
+                    caption_to_send = final_caption if first else None
+                    
                     if msg.photo:
                         media_group.add_photo(
                             media=msg.photo[-1].file_id, 
-                            caption=caption, 
+                            caption=caption_to_send, 
                             parse_mode="HTML"
                         )
                     elif msg.document:
                         media_group.add_document(
                             media=msg.document.file_id, 
-                            caption=caption, 
+                            caption=caption_to_send, 
                             parse_mode="HTML"
                         )
+                    elif msg.video:
+                        media_group.add_video(
+                            media=msg.video.file_id,
+                            caption=caption_to_send,
+                            parse_mode="HTML"
+                        )
+                    first = False
                 
                 await bot.send_media_group(user_id, media=media_group.build())
                 return
 
-            # Б) ЕСЛИ ЭТО ОБЫЧНОЕ СООБЩЕНИЕ
+            # 2. ОБЫЧНОЕ СООБЩЕНИЕ
             if message.text:
                 await bot.send_message(
                     user_id, f"{prefix}{message.text}", parse_mode="HTML"
                 )
             elif message.photo:
-                # [ИСПРАВЛЕНИЕ] Правильная логика для caption
-                if message.caption:
-                    caption = f"{prefix}{message.caption}"
-                else:
-                    caption = prefix # Теперь переменная точно создается
-
+                text = message.caption or ""
                 await bot.send_photo(
                     user_id,
                     message.photo[-1].file_id,
-                    caption=caption,
+                    caption=f"{prefix}{text}",
                     parse_mode="HTML",
                 )
             elif message.document:
-                if message.caption:
-                    caption = f"{prefix}{message.caption}"
-                else:
-                    caption = prefix # [ИСПРАВЛЕНИЕ]
-
+                text = message.caption or ""
                 await bot.send_document(
                     user_id,
                     message.document.file_id,
-                    caption=caption,
+                    caption=f"{prefix}{text}",
                     parse_mode="HTML",
                 )
             else:
                 await message.answer("Тип сообщения не поддерживается.")
         except Exception as e:
-            print(f"Ошибка отправки: {e}")
+            print(f"Error admin_to_user: {e}")
             await message.answer(
                 "Ошибка доставки (возможно пользователь заблокировал бота)."
             )
