@@ -1,11 +1,13 @@
 """Запрос участником кредов."""
-import sys
 import os
-from aiogram import F, types, Router
+import sys
+
+from aiogram import F, Router, types
 from sqlalchemy import select
 
-sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
 from models import User, async_session
+
+sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
 
 
 get_creds = Router()

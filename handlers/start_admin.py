@@ -1,12 +1,14 @@
 """Реакции на кнопки Админ-панели и Назад в меню."""
-import sys
 import os
-from aiogram import F, types, Router
+import sys
+
+from aiogram import F, Router, types
 from aiogram.fsm.context import FSMContext
 
-sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
 from config import ADMIN_IDS
-from keyboards import get_admin_panel_kb, get_main_kb # Убедитесь, что импорт есть
+from keyboards import get_admin_panel_kb, get_main_kb
+
+sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
 
 
 start_admin = Router()

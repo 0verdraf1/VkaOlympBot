@@ -18,11 +18,9 @@ logging.basicConfig(level=logging.INFO)
 bot = Bot(token=API_TOKEN)
 dp = Dispatcher(storage=MemoryStorage())
 
-# СЛОВАРИ И КЭШИ
 active_alerts: dict[int, list[list[tuple[int, int]]]] = {}
 active_dialogs: dict[int, int] = {}
 
-# Кэш забаненных ID (заполняется при старте бота), чтобы не делать запрос к БД на каждое сообщение
 banned_ids: set[int] = set()
 
 SCHOOLS = [
@@ -36,9 +34,9 @@ SCHOOLS = [
 GRADES = [f"{i} класс" for i in range(1, 12)] + [f"{i} курс" for i in range(1, 5)]
 
 
-# --- FSM ---
-
 class Registration(StatesGroup):
+    """Состояния для регистрации."""
+
     full_name = State()
     phone = State()
     school = State()
@@ -49,6 +47,8 @@ class Registration(StatesGroup):
 
 
 class Report(StatesGroup):
+    """Состояния для репортов (сообщений о нарушениях)."""
+
     offender_username = State()
     description = State()
     proof = State()
@@ -56,11 +56,15 @@ class Report(StatesGroup):
 
 
 class Support(StatesGroup):
+    """Состояния для обращения по поводу бана."""
+
     waiting_for_message = State()
     last_bot_msg_id = State()
 
 
 class AdminPanel(StatesGroup):
+    """Состояния для админ панели."""
+
     waiting_for_broadcast_content = State()
     waiting_for_user_search = State()
     waiting_for_user_id = State()

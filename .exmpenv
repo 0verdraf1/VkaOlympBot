@@ -1,3 +1,4 @@
+# Rename this file to .env. Delete this comment.
 API_TOKEN="222222222:ApITOken"
 ADMIN_IDS=1111111111
 DATABASE_URL = "postgresql+asyncpg://user_db:passwd@localhost/db_name"

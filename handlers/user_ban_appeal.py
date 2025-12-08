@@ -1,37 +1,37 @@
 """Обработка апелляций от забаненных."""
-import sys
 import os
-from aiogram import F, types, Router
+import sys
+
+from aiogram import F, Router, types
 from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
 
+from config import ADMIN_IDS, active_alerts, bot
+
 sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
-from config import bot, active_alerts, ADMIN_IDS
+
 
 ban_appeal_router = Router()
+
 
 @ban_appeal_router.callback_query(F.data == "banned_appeal")
 async def process_ban_appeal(callback: types.CallbackQuery):
     """Забаненный нажимает кнопку связи."""
-    
-    # --- ПРОВЕРКА НА СПАМ ---
-    # Если пользователь уже отправлял запрос и на него еще не ответили
+
     if callback.from_user.id in active_alerts:
         await callback.answer(
             "⏳ Ваш запрос уже отправлен.\nОжидайте, пока организатор свяжется с вами.",
             show_alert=True
         )
         return
-    # ------------------------
 
     await callback.message.answer(
         "Ваше сообщение будет рассмотрено, организаторы свяжутся с вами в этом чате."
     )
     await callback.answer()
 
-    # Формируем алерт для админов
     user = callback.from_user
     user_sign = f"@{user.username}" if user.username else "(Без username)"
-    
+
     alert_text = (
         f"⛔ <b>ЗАПРОС ПО БАНУ</b>\n"
         f"От забаненного: ID <code>{user.id}</code> {user_sign}\n"
@@ -58,8 +58,6 @@ async def process_ban_appeal(callback: types.CallbackQuery):
         except Exception:
             pass
 
-    # Сохраняем алерт. Теперь наличие записи в active_alerts
-    # будет блокировать повторную отправку до ответа админа.
     if sent_messages_info:
         if user.id not in active_alerts:
             active_alerts[user.id] = []

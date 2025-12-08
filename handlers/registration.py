@@ -1,20 +1,27 @@
 """Регистрация участников в системе."""
-import re
-import string
-import secrets
-import sys
 import os
+import re
+import secrets
+import string
+import sys
 
 from aiogram import F, Router, types
 from aiogram.filters import Command
 from aiogram.fsm.context import FSMContext
+from aiogram.types import FSInputFile
 from sqlalchemy import select
-from aiogram.types import FSInputFile # <--- НУЖНО ДОБАВИТЬ ЭТОТ ИМПОРТ
+
+from config import GRADES, Registration, SCHOOLS, bot, try_delete
+from keyboards import (
+    get_agreement_kb,
+    get_cancel_kb,
+    get_confirm_kb,
+    get_main_kb,
+    get_selection_kb,
+)
+from models import User, async_session
 
 sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
-from config import GRADES, SCHOOLS, bot, Registration, try_delete
-from keyboards import get_main_kb, get_selection_kb, get_cancel_kb, get_agreement_kb, get_confirm_kb
-from models import User, async_session
 
 
 registration = Router()
@@ -22,6 +29,7 @@ registration = Router()
 
 def generate_credentials(db_id):
     """Генерация логина и пароля."""
+
     login = f"user{db_id}"
     alphabet = string.ascii_letters + string.digits
     password = "".join(secrets.choice(alphabet) for i in range(20))
@@ -31,21 +39,22 @@ def generate_credentials(db_id):
 @registration.message(Command("start"))
 async def cmd_start(message: types.Message):
     """Нажатие на кнопку старт или /start."""
+
     await message.answer(
         "Добро пожаловать...", reply_markup=get_main_kb(message.from_user.id)
     )
 
 
-# --- ХЕНДЛЕР ОТМЕНЫ (стоит первым) ---
 @registration.message(Registration.full_name, F.text == "🏠 На главную")
 @registration.message(Registration.phone, F.text == "🏠 На главную")
 @registration.message(Registration.school, F.text == "🏠 На главную")
 @registration.message(Registration.grade, F.text == "🏠 На главную")
 @registration.message(Registration.email, F.text == "🏠 На главную")
-@registration.message(Registration.waiting_for_agreement, F.text == "🏠 На главную") # Добавили
+@registration.message(Registration.waiting_for_agreement, F.text == "🏠 На главную")
 @registration.message(Registration.confirm, F.text == "🏠 На главную")
 async def cancel_registration(message: types.Message, state: FSMContext):
     """Отмена регистрации и выход в меню."""
+
     await state.clear()
     await try_delete(bot, message.chat.id, message.message_id)
     await message.answer(
@@ -57,7 +66,7 @@ async def cancel_registration(message: types.Message, state: FSMContext):
 @registration.message(F.text == "📝 Зарегистрироваться")
 async def start_register(message: types.Message, state: FSMContext):
     """Регистрация пользователя, ввод Ф.И.О."""
-    
+
     await try_delete(bot, message.chat.id, message.message_id)
 
     async with async_session() as session:
@@ -82,6 +91,7 @@ async def start_register(message: types.Message, state: FSMContext):
 @registration.message(Registration.full_name)
 async def process_name(message: types.Message, state: FSMContext):
     """Сохранение Ф.И.О. и ввод номера телефона."""
+
     data = await state.get_data()
 
     if "last_bot_msg_id" in data:
@@ -101,6 +111,7 @@ async def process_name(message: types.Message, state: FSMContext):
 @registration.message(Registration.phone)
 async def process_phone(message: types.Message, state: FSMContext):
     """Проверка введенного телефона и сохранение, ввод уч.зав."""
+
     data = await state.get_data()
     pattern = r"^\+7 \(\d{3}\) \d{3}-\d{2}-\d{2}$"
 
@@ -134,6 +145,7 @@ async def process_phone(message: types.Message, state: FSMContext):
 @registration.callback_query(Registration.school, F.data.startswith("school_"))
 async def process_school(callback: types.CallbackQuery, state: FSMContext):
     """Сохранение уч.зав. и выбор класса/курса."""
+
     school_name = callback.data.split("_")[1]
     await state.update_data(school=school_name)
     await state.set_state(Registration.grade)
@@ -147,12 +159,13 @@ async def process_school(callback: types.CallbackQuery, state: FSMContext):
 @registration.callback_query(Registration.grade, F.data.startswith("grade_"))
 async def process_grade(callback: types.CallbackQuery, state: FSMContext):
     """Сохранение класса/курса и ввод эл.почты."""
+
     grade_name = callback.data.split("_")[1]
     await state.update_data(grade=grade_name)
     await state.set_state(Registration.email)
 
     await try_delete(bot, callback.message.chat.id, callback.message.message_id)
-    
+
     msg = await callback.message.answer(
         f"Выбрано: {grade_name}\nВведите вашу электронную почту:",
         reply_markup=get_cancel_kb()
@@ -163,6 +176,7 @@ async def process_grade(callback: types.CallbackQuery, state: FSMContext):
 @registration.message(Registration.email)
 async def process_email(message: types.Message, state: FSMContext):
     """Проверка эл.почты и переход к СОГЛАШЕНИЮ."""
+
     data = await state.get_data()
 
     if "@" not in message.text or "." not in message.text:
@@ -170,15 +184,13 @@ async def process_email(message: types.Message, state: FSMContext):
         return
 
     await state.update_data(email=message.text)
-    
-    # --- ПЕРЕХОД К СОГЛАШЕНИЮ ---
+
     await state.set_state(Registration.waiting_for_agreement)
 
     await try_delete(bot, message.chat.id, message.message_id)
     if "last_bot_msg_id" in data:
         await try_delete(bot, message.chat.id, data["last_bot_msg_id"])
 
-    # Показываем данные пользователя для проверки
     user_data_msg = (
         "<b>Проверьте ваши данные:</b>\n"
         f"ФИО: {data.get('full_name')}\n"
@@ -190,7 +202,7 @@ async def process_email(message: types.Message, state: FSMContext):
     )
 
     msg = await message.answer(
-        user_data_msg, 
+        user_data_msg,
         reply_markup=get_agreement_kb(),
         parse_mode="HTML"
     )
@@ -200,8 +212,8 @@ async def process_email(message: types.Message, state: FSMContext):
 @registration.message(Registration.waiting_for_agreement, F.text == "📄 Согласие на обработку персональных данных")
 async def send_agreement_file(message: types.Message):
     """Отправляет PDF файл с соглашением."""
+
     try:
-        # Файл должен лежать в корне проекта!
         pdf_file = FSInputFile("Соглашение.pdf")
         await message.answer_document(pdf_file, caption="Пожалуйста, ознакомьтесь с соглашением.")
     except Exception as e:
@@ -212,14 +224,15 @@ async def send_agreement_file(message: types.Message):
 @registration.message(Registration.waiting_for_agreement, F.text == "✅ Я принимаю условия")
 async def accept_agreement(message: types.Message, state: FSMContext):
     """Переход к финальному подтверждению."""
+
     data = await state.get_data()
-    
+
     await try_delete(bot, message.chat.id, message.message_id)
     if "last_bot_msg_id" in data:
         await try_delete(bot, message.chat.id, data["last_bot_msg_id"])
 
     await state.set_state(Registration.confirm)
-    
+
     msg = await message.answer(
         "Условия приняты. Нажмите кнопку ниже для завершения регистрации.",
         reply_markup=get_confirm_kb()
@@ -230,7 +243,7 @@ async def accept_agreement(message: types.Message, state: FSMContext):
 @registration.message(Registration.confirm, F.text == "🚀 Подтвердить введенные данные")
 async def finish_registration(message: types.Message, state: FSMContext):
     """Сохранение данных в БД."""
-    
+
     data = await state.get_data()
 
     await try_delete(bot, message.chat.id, message.message_id)

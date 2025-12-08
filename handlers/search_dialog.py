@@ -1,30 +1,26 @@
 """Поиск организатором диалога с участником."""
-import sys
 import os
-from aiogram import F, types, Router
+import sys
+
+from aiogram import F, Router, types
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.storage.base import StorageKey
 from sqlalchemy import select
 
-sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
-from config import (
-    AdminPanel,
-    UserState,
-    bot,
-    dp,
-    active_dialogs,
-    ADMIN_IDS,
-)
-from keyboards import get_admin_panel_kb, get_admin_dialog_kb, get_search_method_kb
+from config import ADMIN_IDS, AdminPanel, UserState, active_dialogs, bot, dp
+from keyboards import get_admin_dialog_kb, get_admin_panel_kb, get_search_method_kb
 from models import User, async_session
+
+sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
 
 
 search = Router()
 
 
-# --- 1. ЗАПУСК ПОИСКА (Показываем выбор) ---
 @search.message(F.text == "👤 Общение с участником")
 async def start_dialog_search_menu(message: types.Message):
+    """Запускает поиск."""
+
     if message.from_user.id not in ADMIN_IDS:
         return
     await message.answer(
@@ -33,9 +29,10 @@ async def start_dialog_search_menu(message: types.Message):
     )
 
 
-# --- 2. ВЫБОР МЕТОДА (Callback) ---
 @search.callback_query(F.data == "search_by_username")
 async def setup_username_search(callback: types.CallbackQuery, state: FSMContext):
+    """Ввод username."""
+
     await state.set_state(AdminPanel.waiting_for_user_search)
     await callback.message.edit_text(
         "Введите @username пользователя:",
@@ -46,6 +43,8 @@ async def setup_username_search(callback: types.CallbackQuery, state: FSMContext
 
 @search.callback_query(F.data == "search_by_id")
 async def setup_id_search(callback: types.CallbackQuery, state: FSMContext):
+    """Ввод id."""
+
     await state.set_state(AdminPanel.waiting_for_user_id)
     await callback.message.edit_text(
         "Введите Telegram ID пользователя (число):",
@@ -54,9 +53,10 @@ async def setup_id_search(callback: types.CallbackQuery, state: FSMContext):
     await callback.answer()
 
 
-# --- 3. ПОИСК ПО USERNAME ---
 @search.message(AdminPanel.waiting_for_user_search)
 async def process_username_search(message: types.Message, state: FSMContext):
+    """Поиск по username."""
+
     username_input = message.text.strip().replace("@", "")
 
     async with async_session() as session:
@@ -76,9 +76,10 @@ async def process_username_search(message: types.Message, state: FSMContext):
     await start_dialog_with_user(message, state, user)
 
 
-# --- 4. ПОИСК ПО ID ---
 @search.message(AdminPanel.waiting_for_user_id)
 async def process_id_search(message: types.Message, state: FSMContext):
+    """Поиск по id."""
+
     id_input = message.text.strip()
 
     if not id_input.isdigit():
@@ -104,18 +105,14 @@ async def process_id_search(message: types.Message, state: FSMContext):
     await start_dialog_with_user(message, state, user)
 
 
-# --- ВСПОМОГАТЕЛЬНАЯ ФУНКЦИЯ ЗАПУСКА ДИАЛОГА ---
 async def start_dialog_with_user(message: types.Message, state: FSMContext, user):
     """Общая логика соединения для обоих методов поиска."""
-    
-    # 1. Записываем связь
+
     active_dialogs[user.telegram_id] = message.from_user.id
-    
-    # 2. Состояние админа
+
     await state.set_state(AdminPanel.in_dialog)
     await state.update_data(dialog_user_id=user.telegram_id)
 
-    # 3. Состояние участника
     try:
         user_key = StorageKey(
             bot_id=bot.id, chat_id=user.telegram_id, user_id=user.telegram_id

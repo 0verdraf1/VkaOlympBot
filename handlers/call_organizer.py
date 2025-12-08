@@ -1,12 +1,14 @@
 """Взаимодействие участника с организаторами."""
-import sys
 import os
-from aiogram import F, types, Router
+import sys
+
+from aiogram import F, Router, types
 from sqlalchemy import select
 
-sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
-from keyboards import get_organizer_kb, get_main_kb
+from keyboards import get_main_kb, get_organizer_kb
 from models import User, async_session
+
+sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
 
 
 call = Router()
@@ -16,7 +18,6 @@ call = Router()
 async def contact_menu(message: types.Message):
     """Выбор причины для связи с организаторами (с проверкой регистрации)."""
 
-    # Проверка регистрации
     async with async_session() as session:
         result = await session.execute(
             select(User).where(User.telegram_id == message.from_user.id)

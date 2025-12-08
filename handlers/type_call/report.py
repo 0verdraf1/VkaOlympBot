@@ -1,15 +1,17 @@
 """Система подачи репортов."""
-import sys
 import os
+import sys
 from typing import List
-from aiogram import F, types, Router
+
+from aiogram import F, Router, types
 from aiogram.fsm.context import FSMContext
 from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
 from aiogram.utils.media_group import MediaGroupBuilder
 
-sys.path.append(os.path.join(os.path.dirname(__file__), '...'))
-from config import Report, bot, active_alerts, try_delete, ADMIN_IDS
+from config import ADMIN_IDS, Report, active_alerts, bot, try_delete
 from keyboards import get_main_kb
+
+sys.path.append(os.path.join(os.path.dirname(__file__), '...'))
 
 
 user_rep = Router()
@@ -18,6 +20,7 @@ user_rep = Router()
 @user_rep.callback_query(F.data == "report_violation")
 async def start_report(callback: types.CallbackQuery, state: FSMContext):
     """Начало составления репорта."""
+
     await state.set_state(Report.offender_username)
     await callback.message.edit_text(
         "Введите имя пользователя нарушителя (начинается с @):",
@@ -30,6 +33,7 @@ async def start_report(callback: types.CallbackQuery, state: FSMContext):
 @user_rep.message(Report.offender_username)
 async def process_report_username(message: types.Message, state: FSMContext):
     """Ввод username."""
+
     data = await state.get_data()
     if "last_bot_msg_id" in data:
         await try_delete(bot, message.chat.id, data["last_bot_msg_id"])
@@ -49,6 +53,7 @@ async def process_report_username(message: types.Message, state: FSMContext):
 @user_rep.message(Report.description)
 async def process_report_desc(message: types.Message, state: FSMContext):
     """Ввод описания."""
+
     data = await state.get_data()
     if "last_bot_msg_id" in data:
         await try_delete(bot, message.chat.id, data["last_bot_msg_id"])
@@ -67,7 +72,11 @@ async def process_report_proof(
     message: types.Message, state: FSMContext,
     album: List[types.Message] = None
 ):
-    """Рассылка репортов организаторам."""
+    """
+    1. Формирования алерта репорта;
+    2. Рассылка репортов организаторам.
+    """
+
     data = await state.get_data()
 
     user_proof_text = ""
@@ -79,16 +88,15 @@ async def process_report_proof(
     else:
         user_proof_text = message.text or message.caption or ""
 
-    # --- ФОРМИРОВАНИЕ ЗАГОЛОВКА ---
     user_link = f"(@{message.from_user.username})" if message.from_user.username else "(Без username)"
-    
+
     report_text = (
         f"🚨 <b>НОВЫЙ РЕПОРТ</b>\n"
         f"От кого: ID <code>{message.from_user.id}</code> {user_link}\n"
         f"Нарушитель: {data['offender_username']}\n"
         f"Описание: {data['description']}"
     )
-    
+
     if user_proof_text and user_proof_text.lower() != "нет":
         report_text += f"\nДок-ва (текст): {user_proof_text}"
 
@@ -105,15 +113,17 @@ async def process_report_proof(
             if album:
                 media_group = MediaGroupBuilder()
                 for msg in album:
-                    if msg.photo: media_group.add_photo(media=msg.photo[-1].file_id)
-                    elif msg.document: media_group.add_document(media=msg.document.file_id)
-                
+                    if msg.photo:
+                        media_group.add_photo(media=msg.photo[-1].file_id)
+                    elif msg.document:
+                        media_group.add_document(media=msg.document.file_id)
+
                 await bot.send_media_group(chat_id=admin_id, media=media_group.build())
-                
+
                 sent_msg = await bot.send_message(
-                    chat_id=admin_id, 
-                    text=report_text, 
-                    parse_mode="HTML", 
+                    chat_id=admin_id,
+                    text=report_text,
+                    parse_mode="HTML",
                     reply_markup=kb
                 )
                 sent_messages_info.append((admin_id, sent_msg.message_id))
@@ -122,7 +132,7 @@ async def process_report_proof(
                 sent_msg = await bot.send_photo(
                     chat_id=admin_id,
                     photo=message.photo[-1].file_id,
-                    caption=report_text, 
+                    caption=report_text,
                     parse_mode="HTML",
                     reply_markup=kb
                 )
@@ -147,9 +157,10 @@ async def process_report_proof(
 
     if "last_bot_msg_id" in data:
         await try_delete(bot, message.chat.id, data["last_bot_msg_id"])
-        
+
     if album:
-        for msg in album: await try_delete(bot, message.chat.id, msg.message_id)
+        for msg in album:
+            await try_delete(bot, message.chat.id, msg.message_id)
     else:
         await try_delete(bot, message.chat.id, message.message_id)
 

@@ -1,15 +1,17 @@
 """Система отправки сообщений о помощи."""
-import sys
 import os
+import sys
 from typing import List
-from aiogram import F, types, Router
+
+from aiogram import F, Router, types
 from aiogram.fsm.context import FSMContext
 from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
 from aiogram.utils.media_group import MediaGroupBuilder
 
-sys.path.append(os.path.join(os.path.dirname(__file__), '...'))
-from config import Support, bot, active_alerts, try_delete, ADMIN_IDS
+from config import ADMIN_IDS, Support, active_alerts, bot, try_delete
 from keyboards import get_main_kb
+
+sys.path.append(os.path.join(os.path.dirname(__file__), '...'))
 
 
 user_help = Router()
@@ -18,6 +20,7 @@ user_help = Router()
 @user_help.callback_query(F.data == "contact_support")
 async def start_support(callback: types.CallbackQuery, state: FSMContext):
     """Ввод описания проблемы."""
+
     await state.set_state(Support.waiting_for_message)
     await callback.message.edit_text(
         "Опишите вашу проблему одним сообщением (можно прикрепить фото), "
@@ -30,11 +33,15 @@ async def start_support(callback: types.CallbackQuery, state: FSMContext):
 
 @user_help.message(Support.waiting_for_message)
 async def forward_to_admin(
-    message: types.Message, 
+    message: types.Message,
     state: FSMContext,
     album: List[types.Message] = None
 ):
-    """Рассылка проблем организаторам."""
+    """
+    1. Формирование алерта запроса в поддержку;
+    2. Рассылка алерта организаторам.
+    """
+
     data = await state.get_data()
 
     user_text = ""
@@ -49,14 +56,13 @@ async def forward_to_admin(
     if not user_text and not album and not message.photo and not message.document:
         user_text = "Без текста"
 
-    # --- ФОРМИРОВАНИЕ ЗАГОЛОВКА ---
     user_link = f"(@{message.from_user.username})" if message.from_user.username else "(Без username)"
-    
+
     header_text = (
         f"🆘 <b>ВОПРОС В ПОДДЕРЖКУ</b>\n"
         f"От: ID <code>{message.from_user.id}</code> {user_link}\n\n"
     )
-    
+
     full_text_msg = f"{header_text}Текст:\n{user_text}" if user_text else header_text + "Текст: (только медиа)"
 
     kb = InlineKeyboardMarkup(
@@ -72,12 +78,15 @@ async def forward_to_admin(
             if album:
                 media_group = MediaGroupBuilder()
                 for msg in album:
-                    if msg.photo: media_group.add_photo(media=msg.photo[-1].file_id)
-                    elif msg.document: media_group.add_document(media=msg.document.file_id)
-                    elif msg.video: media_group.add_video(media=msg.video.file_id)
-                
+                    if msg.photo:
+                        media_group.add_photo(media=msg.photo[-1].file_id)
+                    elif msg.document:
+                        media_group.add_document(media=msg.document.file_id)
+                    elif msg.video:
+                        media_group.add_video(media=msg.video.file_id)
+
                 await bot.send_media_group(chat_id=admin_id, media=media_group.build())
-                
+
                 sent_msg = await bot.send_message(
                     chat_id=admin_id,
                     text=full_text_msg,
@@ -89,7 +98,7 @@ async def forward_to_admin(
             elif message.photo or message.document:
                 file_id = message.photo[-1].file_id if message.photo else message.document.file_id
                 method = bot.send_photo if message.photo else bot.send_document
-                
+
                 sent_msg = await method(
                     chat_id=admin_id,
                     photo=file_id if message.photo else None,
@@ -103,7 +112,7 @@ async def forward_to_admin(
             else:
                 sent_msg = await bot.send_message(
                     chat_id=admin_id,
-                    text=full_text_msg, 
+                    text=full_text_msg,
                     parse_mode="HTML",
                     reply_markup=kb
                 )
@@ -119,9 +128,10 @@ async def forward_to_admin(
 
     if "last_bot_msg_id" in data:
         await try_delete(bot, message.chat.id, data["last_bot_msg_id"])
-        
+
     if album:
-        for msg in album: await try_delete(bot, message.chat.id, msg.message_id)
+        for msg in album:
+            await try_delete(bot, message.chat.id, msg.message_id)
     else:
         await try_delete(bot, message.chat.id, message.message_id)
 
