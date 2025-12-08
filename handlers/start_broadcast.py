@@ -1,17 +1,19 @@
 """Рассылка сообщений участникам."""
-import sys
-import os
 import asyncio
+import os
+import sys
 from typing import List
-from aiogram import F, types, Router
+
+from aiogram import F, Router, types
 from aiogram.fsm.context import FSMContext
 from aiogram.utils.media_group import MediaGroupBuilder
 from sqlalchemy import select
 
-sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
-from config import AdminPanel, bot, ADMIN_IDS
+from config import ADMIN_IDS, AdminPanel, bot
 from keyboards import get_admin_panel_kb
 from models import User, async_session
+
+sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
 
 
 broad = Router()
@@ -33,7 +35,7 @@ async def start_broadcast(message: types.Message, state: FSMContext):
 
 @broad.message(AdminPanel.waiting_for_broadcast_content)
 async def process_broadcast(
-    message: types.Message, 
+    message: types.Message,
     state: FSMContext,
     album: List[types.Message] = None
 ):
@@ -46,7 +48,6 @@ async def process_broadcast(
     count = 0
     await message.answer(f"⏳ Начинаю рассылку на {len(users_ids)} пользователей...")
     is_album = False
-    media_group_to_send = None
 
     if album:
         is_album = True
@@ -54,26 +55,26 @@ async def process_broadcast(
         for element in album:
             if element.photo:
                 builder.add_photo(
-                    media=element.photo[-1].file_id, 
-                    caption=element.caption, 
+                    media=element.photo[-1].file_id,
+                    caption=element.caption,
                     caption_entities=element.caption_entities
                 )
             elif element.video:
                 builder.add_video(
-                    media=element.video.file_id, 
-                    caption=element.caption, 
+                    media=element.video.file_id,
+                    caption=element.caption,
                     caption_entities=element.caption_entities
                 )
             elif element.document:
                 builder.add_document(
-                    media=element.document.file_id, 
-                    caption=element.caption, 
+                    media=element.document.file_id,
+                    caption=element.caption,
                     caption_entities=element.caption_entities
                 )
             elif element.audio:
                 builder.add_audio(
-                    media=element.audio.file_id, 
-                    caption=element.caption, 
+                    media=element.audio.file_id,
+                    caption=element.caption,
                     caption_entities=element.caption_entities
                 )
 
@@ -86,7 +87,6 @@ async def process_broadcast(
             elif element.document:
                 album_data.append(('document', element.document.file_id, element.caption, element.caption_entities))
 
-
     for user_id in users_ids:
         try:
             if is_album:
@@ -98,20 +98,19 @@ async def process_broadcast(
                         mb.add_video(m_id, caption=m_cap, caption_entities=m_ents)
                     elif m_type == 'document':
                         mb.add_document(m_id, caption=m_cap, caption_entities=m_ents)
-                
+
                 await bot.send_media_group(chat_id=user_id, media=mb.build())
-            
+
             else:
-                # Обычное сообщение - используем copy_message (он идеален)
                 await bot.copy_message(
                     chat_id=user_id,
                     from_chat_id=message.chat.id,
                     message_id=message.message_id,
                 )
-            
+
             count += 1
             await asyncio.sleep(0.05)
-        except Exception as e:
+        except Exception:
             pass
 
     await message.answer(

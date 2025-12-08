@@ -1,17 +1,19 @@
 """Запуск бота."""
 import asyncio
+
 from sqlalchemy import select
 
-from config import dp, bot, banned_ids
-from middlewares import MediaGroupMiddleware, BanMiddleware
-from models import init_db, User, async_session
+from config import banned_ids, bot, dp
 from handlers.main_handler import router
+from middlewares import BanMiddleware, MediaGroupMiddleware
+from models import User, async_session, init_db
 
 
 async def load_banned_users():
     """Загрузка списка забаненных ID в кэш при старте."""
+
     async with async_session() as session:
-        result = await session.execute(select(User.telegram_id).where(User.is_banned == True))
+        result = await session.execute(select(User.telegram_id).where(User.is_banned is True))
         ids = result.scalars().all()
         for banned_id in ids:
             banned_ids.add(banned_id)

@@ -1,15 +1,17 @@
 """Организатор пишет участнику."""
-import sys
 import os
+import sys
 from typing import List
-from aiogram import types, Router
+
+from aiogram import Router, types
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.storage.base import StorageKey
 from aiogram.utils.media_group import MediaGroupBuilder
 
-sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
 from config import AdminPanel, active_dialogs, bot, dp
 from keyboards import get_admin_panel_kb
+
+sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
 
 
 admin_to_user = Router()
@@ -17,8 +19,8 @@ admin_to_user = Router()
 
 @admin_to_user.message(AdminPanel.in_dialog)
 async def admin_message_proxy(
-    message: types.Message, 
-    state: FSMContext, 
+    message: types.Message,
+    state: FSMContext,
     album: List[types.Message] = None
 ):
     """Проксирование сообщений админа участнику (текст, фото, альбомы)."""
@@ -26,7 +28,6 @@ async def admin_message_proxy(
     data = await state.get_data()
     user_id = data.get("dialog_user_id")
 
-    # --- ВЫХОД ИЗ ДИАЛОГА ---
     if message.text == "❌ Закончить диалог":
         if user_id in active_dialogs:
             del active_dialogs[user_id]
@@ -58,41 +59,35 @@ async def admin_message_proxy(
     if message.text == "🏠 На главную":
         return
 
-    # --- ПЕРЕСЫЛКА ---
     if user_id:
         try:
             prefix = "<b>Организатор:</b>\n"
-            
-            # 1. АЛЬБОМ
+
             if album:
                 media_group = MediaGroupBuilder()
-                
-                # --- ИЩЕМ ТЕКСТ ВО ВСЕМ АЛЬБОМЕ ---
+
                 found_caption = None
                 for msg in album:
                     if msg.caption:
                         found_caption = msg.caption
-                        break # Нашли - выходим
-                
-                # Формируем итоговую подпись
+                        break
+
                 final_caption = f"{prefix}{found_caption}" if found_caption else prefix
 
-                # Собираем альбом
                 first = True
                 for msg in album:
-                    # Подпись лепим только к первому элементу
                     caption_to_send = final_caption if first else None
-                    
+
                     if msg.photo:
                         media_group.add_photo(
-                            media=msg.photo[-1].file_id, 
-                            caption=caption_to_send, 
+                            media=msg.photo[-1].file_id,
+                            caption=caption_to_send,
                             parse_mode="HTML"
                         )
                     elif msg.document:
                         media_group.add_document(
-                            media=msg.document.file_id, 
-                            caption=caption_to_send, 
+                            media=msg.document.file_id,
+                            caption=caption_to_send,
                             parse_mode="HTML"
                         )
                     elif msg.video:
@@ -102,11 +97,10 @@ async def admin_message_proxy(
                             parse_mode="HTML"
                         )
                     first = False
-                
+
                 await bot.send_media_group(user_id, media=media_group.build())
                 return
 
-            # 2. ОБЫЧНОЕ СООБЩЕНИЕ
             if message.text:
                 await bot.send_message(
                     user_id, f"{prefix}{message.text}", parse_mode="HTML"

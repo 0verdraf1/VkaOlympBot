@@ -1,22 +1,24 @@
 """Система доставки ответа на репорт/просьбу."""
-import sys
 import os
+import sys
+
 from aiogram import F, Router, types
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.storage.base import StorageKey
 
-sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
 from config import (
-    bot,
-    dp,
+    ADMIN_IDS,
+    AdminPanel,
+    AdminState,
+    UserState,
     active_alerts,
     active_dialogs,
-    ADMIN_IDS,
-    UserState,
-    AdminState,
-    AdminPanel,
+    bot,
+    dp,
 )
 from keyboards import get_admin_dialog_kb
+
+sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
 
 
 router_reply = Router()
@@ -34,8 +36,7 @@ async def admin_start_reply(callback: types.CallbackQuery, state: FSMContext):
     current_admin_id = callback.from_user.id
     admin_username = callback.from_user.username
 
-    active_dialogs[user_id] = current_admin_id 
-    # ------------------------------
+    active_dialogs[user_id] = current_admin_id
 
     try:
         user_storage_key = StorageKey(

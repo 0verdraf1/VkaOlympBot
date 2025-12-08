@@ -1,15 +1,19 @@
 """Общие хендлеры навигации."""
-import sys
 import os
-from aiogram import F, types, Router
+import sys
+
+from aiogram import F, Router, types
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.storage.base import StorageKey
 
-sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
-from keyboards import get_main_kb
 from config import active_dialogs, bot, dp
+from keyboards import get_main_kb
+
+sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
+
 
 common_router = Router()
+
 
 @common_router.message(F.text == "🏠 На главную")
 async def go_to_main(message: types.Message, state: FSMContext):
@@ -27,14 +31,16 @@ async def go_to_main(message: types.Message, state: FSMContext):
             user_ctx = FSMContext(storage=dp.storage, key=user_key)
             await user_ctx.clear()
             await bot.send_message(dialog_user_id, "🔕 <b>Диалог завершен (собеседник вышел).</b>", parse_mode="HTML")
-        except: pass
+        except Exception:
+            pass
 
     if user_id in active_dialogs:
         admin_id = active_dialogs[user_id]
         del active_dialogs[user_id]
         try:
             await bot.send_message(admin_id, "🔕 <b>Участник покинул диалог.</b>", parse_mode="HTML")
-        except: pass
+        except Exception:
+            pass
 
     await state.clear()
 
