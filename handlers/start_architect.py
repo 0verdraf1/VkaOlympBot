@@ -16,7 +16,7 @@ sys.path.append(os.path.join(os.path.dirname(__file__), ".."))
 architect_router = Router()
 
 
-@architect_router.message(F.text == "🏗 Панель Архитектора")
+@architect_router.message(F.text == "🛜 Панель Архитектора")
 async def open_architect_panel(message: types.Message, state: FSMContext):
     """Вход в панель."""
 
@@ -228,7 +228,7 @@ async def broadcast_creds(message: types.Message):
     for user in users:
         try:
             creds_text = (
-                f"🔔 <b>Ваши данные для входа:</b>\n"
+                f"🔔 Ваши данные для входа:\n"
                 f"Login: `{user.login_id}`\n"
                 f"Password: `{user.plain_password}`"
             )
