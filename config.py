@@ -23,14 +23,6 @@ active_dialogs: dict[int, int] = {}
 
 banned_ids: set[int] = set()
 
-SCHOOLS = [
-    "Школа №1",
-    "Лицей №5",
-    "Гимназия №12",
-    "МГУ",
-    "МГТУ им. Баумана",
-]
-
 GRADES = [f"{i} класс" for i in range(1, 12)] + [f"{i} курс" for i in range(1, 5)]
 
 
@@ -39,6 +31,7 @@ class Registration(StatesGroup):
 
     full_name = State()
     phone = State()
+    place_of_study = State()
     school = State()
     grade = State()
     email = State()

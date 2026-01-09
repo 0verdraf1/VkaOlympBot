@@ -1,28 +1,28 @@
 """Регистрация участников в системе."""
-import os
 import re
-import secrets
 import string
+import secrets
 import sys
+import os
 
 from aiogram import F, Router, types
 from aiogram.filters import Command
 from aiogram.fsm.context import FSMContext
-from aiogram.types import FSInputFile
 from sqlalchemy import select
+from aiogram.types import FSInputFile
 
-from config import GRADES, Registration, SCHOOLS, bot, try_delete
+from config import GRADES, bot, Registration, try_delete
 from keyboards import (
-    get_agreement_kb,
-    get_cancel_kb,
-    get_confirm_kb,
     get_main_kb,
     get_selection_kb,
+    get_cancel_kb,
+    get_agreement_kb,
+    get_confirm_kb,
 )
+
 from models import User, async_session
 
-sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
-
+sys.path.append(os.path.join(os.path.dirname(__file__), ".."))
 
 registration = Router()
 
@@ -47,6 +47,7 @@ async def cmd_start(message: types.Message):
 
 @registration.message(Registration.full_name, F.text == "🏠 На главную")
 @registration.message(Registration.phone, F.text == "🏠 На главную")
+@registration.message(Registration.place_of_study, F.text == "🏠 На главную")
 @registration.message(Registration.school, F.text == "🏠 На главную")
 @registration.message(Registration.grade, F.text == "🏠 На главную")
 @registration.message(Registration.email, F.text == "🏠 На главную")
@@ -59,7 +60,7 @@ async def cancel_registration(message: types.Message, state: FSMContext):
     await try_delete(bot, message.chat.id, message.message_id)
     await message.answer(
         "🏠 Регистрация прервана. Вы вернулись в главное меню.",
-        reply_markup=get_main_kb(message.from_user.id)
+        reply_markup=get_main_kb(message.from_user.id),
     )
 
 
@@ -82,8 +83,7 @@ async def start_register(message: types.Message, state: FSMContext):
     await state.set_state(Registration.full_name)
 
     msg = await message.answer(
-        "Введите ваше Ф.И.О. (полностью):",
-        reply_markup=get_cancel_kb()
+        "Введите ваше Ф.И.О. (полностью):", reply_markup=get_cancel_kb()
     )
     await state.update_data(last_bot_msg_id=msg.message_id)
 
@@ -102,58 +102,114 @@ async def process_name(message: types.Message, state: FSMContext):
 
     await state.set_state(Registration.phone)
     msg = await message.answer(
-        "Введите номер телефона в формате +7 (999) 000-00-00:",
-        reply_markup=get_cancel_kb()
+        "Введите номер телефона:\n"
+        "(Номер должен начинаться с <b>+7</b> или с <b>8</b>)",
+        reply_markup=get_cancel_kb(),
+        parse_mode="HTML",
     )
     await state.update_data(last_bot_msg_id=msg.message_id)
 
 
 @registration.message(Registration.phone)
 async def process_phone(message: types.Message, state: FSMContext):
-    """Проверка введенного телефона и сохранение, ввод уч.зав."""
+    """Проверка телефона, форматирование и переход к вводу города."""
 
     data = await state.get_data()
-    pattern = r"^\+7 \(\d{3}\) \d{3}-\d{2}-\d{2}$"
 
-    if not re.match(pattern, message.text):
+    user_input = message.text.strip()
+    if not (user_input.startswith("+7") or user_input.startswith("8")):
         await try_delete(bot, message.chat.id, message.message_id)
         if "last_bot_msg_id" in data:
             await try_delete(bot, message.chat.id, data["last_bot_msg_id"])
 
         msg = await message.answer(
-            "Ошибка формата! Введите строго в указанном формате: "
-            "+7 (999) 000-00-00",
-            reply_markup=get_cancel_kb()
+            "⚠️ Ошибка формата!\nНомер должен начинаться с <b>+7</b> или <b>8</b>.\nПопробуйте еще раз:",
+            reply_markup=get_cancel_kb(),
+            parse_mode="HTML",
         )
         await state.update_data(last_bot_msg_id=msg.message_id)
         return
+
+    raw_digits = re.sub(r"\D", "", user_input)
+    clean_num = ""
+    error_msg = None
+
+    if len(raw_digits) == 11:
+        if raw_digits[0] in ["7", "8"]:
+            clean_num = "7" + raw_digits[1:]
+        else:
+            error_msg = "Некорректный код страны."
+    else:
+        error_msg = f"Неверное количество цифр (введено: {len(raw_digits)}, нужно: 11)."
+
+    if error_msg:
+        await try_delete(bot, message.chat.id, message.message_id)
+        if "last_bot_msg_id" in data:
+            await try_delete(bot, message.chat.id, data["last_bot_msg_id"])
+
+        msg = await message.answer(
+            f"⚠️ {error_msg}\nПопробуйте еще раз:", reply_markup=get_cancel_kb()
+        )
+        await state.update_data(last_bot_msg_id=msg.message_id)
+        return
+
+    formatted_phone = f"+{clean_num[0]} ({clean_num[1:4]}) {clean_num[4:7]}-{clean_num[7:9]}-{clean_num[9:]}"
 
     if "last_bot_msg_id" in data:
         await try_delete(bot, message.chat.id, data["last_bot_msg_id"])
     await try_delete(bot, message.chat.id, message.message_id)
 
-    await state.update_data(phone=message.text)
-    await state.set_state(Registration.school)
+    await state.update_data(phone=formatted_phone)
+
+    await state.set_state(Registration.place_of_study)
 
     msg = await message.answer(
-        "Выберите учебное заведение:",
-        reply_markup=get_selection_kb(SCHOOLS[:10], "school"),
+        "Введите населенный пункт, где находится ваше учебное заведение\n"
+        "(Например: г. Москва ИЛИ г. Обнинск Калужской области):",
+        reply_markup=get_cancel_kb(),
     )
     await state.update_data(last_bot_msg_id=msg.message_id)
 
 
-@registration.callback_query(Registration.school, F.data.startswith("school_"))
-async def process_school(callback: types.CallbackQuery, state: FSMContext):
-    """Сохранение уч.зав. и выбор класса/курса."""
+@registration.message(Registration.place_of_study)
+async def process_place_of_study(message: types.Message, state: FSMContext):
+    """Сохранение населенного пункта и переход к вводу школы (текстом)."""
 
-    school_name = callback.data.split("_")[1]
-    await state.update_data(school=school_name)
+    data = await state.get_data()
+
+    if "last_bot_msg_id" in data:
+        await try_delete(bot, message.chat.id, data["last_bot_msg_id"])
+    await try_delete(bot, message.chat.id, message.message_id)
+
+    await state.update_data(place_of_study=message.text)
+
+    await state.set_state(Registration.school)
+
+    msg = await message.answer(
+        "Введите полное название вашего учебного заведения:",
+        reply_markup=get_cancel_kb(),
+    )
+    await state.update_data(last_bot_msg_id=msg.message_id)
+
+
+@registration.message(Registration.school)
+async def process_school(message: types.Message, state: FSMContext):
+    """Сохранение школы (текст) и выбор класса/курса."""
+
+    data = await state.get_data()
+
+    if "last_bot_msg_id" in data:
+        await try_delete(bot, message.chat.id, data["last_bot_msg_id"])
+    await try_delete(bot, message.chat.id, message.message_id)
+
+    await state.update_data(school=message.text)
     await state.set_state(Registration.grade)
 
-    await callback.message.edit_text(
-        f"Выбрано: {school_name}\nТеперь выберите класс/курс:",
+    msg = await message.answer(
+        "Выберите класс или курс:",
         reply_markup=get_selection_kb(GRADES, "grade"),
     )
+    await state.update_data(last_bot_msg_id=msg.message_id)
 
 
 @registration.callback_query(Registration.grade, F.data.startswith("grade_"))
@@ -168,7 +224,7 @@ async def process_grade(callback: types.CallbackQuery, state: FSMContext):
 
     msg = await callback.message.answer(
         f"Выбрано: {grade_name}\nВведите вашу электронную почту:",
-        reply_markup=get_cancel_kb()
+        reply_markup=get_cancel_kb(),
     )
     await state.update_data(last_bot_msg_id=msg.message_id)
 
@@ -195,6 +251,7 @@ async def process_email(message: types.Message, state: FSMContext):
         "<b>Проверьте ваши данные:</b>\n"
         f"ФИО: {data.get('full_name')}\n"
         f"Телефон: {data.get('phone')}\n"
+        f"Нас. пункт, в котором обучаетесь: {data.get('place_of_study')}\n"
         f"Уч. заведение: {data.get('school')}\n"
         f"Класс/Курс: {data.get('grade')}\n"
         f"Email: {message.text}\n\n"
@@ -202,26 +259,31 @@ async def process_email(message: types.Message, state: FSMContext):
     )
 
     msg = await message.answer(
-        user_data_msg,
-        reply_markup=get_agreement_kb(),
-        parse_mode="HTML"
+        user_data_msg, reply_markup=get_agreement_kb(), parse_mode="HTML"
     )
     await state.update_data(last_bot_msg_id=msg.message_id)
 
 
-@registration.message(Registration.waiting_for_agreement, F.text == "📄 Согласие на обработку персональных данных")
+@registration.message(
+    Registration.waiting_for_agreement,
+    F.text == "📄 Согласие на обработку персональных данных",
+)
 async def send_agreement_file(message: types.Message):
     """Отправляет PDF файл с соглашением."""
 
     try:
         pdf_file = FSInputFile("Соглашение.pdf")
-        await message.answer_document(pdf_file, caption="Пожалуйста, ознакомьтесь с соглашением.")
+        await message.answer_document(
+            pdf_file, caption="Пожалуйста, ознакомьтесь с соглашением."
+        )
     except Exception as e:
         await message.answer("⚠️ Файл соглашения не найден. Обратитесь к организаторам.")
         print(f"Ошибка отправки файла: {e}")
 
 
-@registration.message(Registration.waiting_for_agreement, F.text == "✅ Я принимаю условия")
+@registration.message(
+    Registration.waiting_for_agreement, F.text == "✅ Я принимаю условия"
+)
 async def accept_agreement(message: types.Message, state: FSMContext):
     """Переход к финальному подтверждению."""
 
@@ -235,7 +297,7 @@ async def accept_agreement(message: types.Message, state: FSMContext):
 
     msg = await message.answer(
         "Условия приняты. Нажмите кнопку ниже для завершения регистрации.",
-        reply_markup=get_confirm_kb()
+        reply_markup=get_confirm_kb(),
     )
     await state.update_data(last_bot_msg_id=msg.message_id)
 
@@ -257,6 +319,7 @@ async def finish_registration(message: types.Message, state: FSMContext):
                 username=message.from_user.username,
                 full_name=data["full_name"],
                 phone=data["phone"],
+                place_of_study=data["place_of_study"],  # Сохраняем город
                 school=data["school"],
                 grade=data["grade"],
                 email=data["email"],

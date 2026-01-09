@@ -1,4 +1,5 @@
 """Организатор пишет участнику."""
+
 import os
 import sys
 from typing import List
@@ -11,7 +12,7 @@ from aiogram.utils.media_group import MediaGroupBuilder
 from config import AdminPanel, active_dialogs, bot, dp
 from keyboards import get_admin_panel_kb
 
-sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
+sys.path.append(os.path.join(os.path.dirname(__file__), ".."))
 
 
 admin_to_user = Router()
@@ -19,9 +20,7 @@ admin_to_user = Router()
 
 @admin_to_user.message(AdminPanel.in_dialog)
 async def admin_message_proxy(
-    message: types.Message,
-    state: FSMContext,
-    album: List[types.Message] = None
+    message: types.Message, state: FSMContext, album: List[types.Message] = None
 ):
     """Проксирование сообщений админа участнику (текст, фото, альбомы)."""
 
@@ -33,17 +32,11 @@ async def admin_message_proxy(
             del active_dialogs[user_id]
 
         await state.clear()
-        await message.answer(
-            "Диалог завершен.",
-            reply_markup=get_admin_panel_kb()
-        )
+        await message.answer("Диалог завершен.", reply_markup=get_admin_panel_kb())
 
         if user_id:
             try:
-                user_key = StorageKey(
-                    bot_id=bot.id,
-                    chat_id=user_id, user_id=user_id
-                )
+                user_key = StorageKey(bot_id=bot.id, chat_id=user_id, user_id=user_id)
                 user_ctx = FSMContext(storage=dp.storage, key=user_key)
                 await user_ctx.clear()
 
@@ -82,19 +75,19 @@ async def admin_message_proxy(
                         media_group.add_photo(
                             media=msg.photo[-1].file_id,
                             caption=caption_to_send,
-                            parse_mode="HTML"
+                            parse_mode="HTML",
                         )
                     elif msg.document:
                         media_group.add_document(
                             media=msg.document.file_id,
                             caption=caption_to_send,
-                            parse_mode="HTML"
+                            parse_mode="HTML",
                         )
                     elif msg.video:
                         media_group.add_video(
                             media=msg.video.file_id,
                             caption=caption_to_send,
-                            parse_mode="HTML"
+                            parse_mode="HTML",
                         )
                     first = False
 

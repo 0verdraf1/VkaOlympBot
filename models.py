@@ -18,6 +18,7 @@ class User(Base):
     username = Column(String, nullable=True)
     full_name = Column(String, nullable=False)
     phone = Column(String, nullable=False)
+    place_of_study = Column(String, nullable=False)
     school = Column(String, nullable=False)
     grade = Column(String, nullable=False)
     email = Column(String, nullable=False)
