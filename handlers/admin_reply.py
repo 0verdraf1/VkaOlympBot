@@ -7,12 +7,12 @@ from aiogram.fsm.context import FSMContext
 from aiogram.fsm.storage.base import StorageKey
 
 from config import (
-    ADMIN_IDS,
     AdminPanel,
     AdminState,
     UserState,
     active_alerts,
     active_dialogs,
+    admin_ids_set,
     bot,
     dp,
 )
@@ -28,7 +28,7 @@ router_reply = Router()
 async def admin_start_reply(callback: types.CallbackQuery, state: FSMContext):
     """Инициализация связи с участником и уведомление др. организаторам"""
 
-    if callback.from_user.id not in ADMIN_IDS:
+    if callback.from_user.id not in admin_ids_set:
         await callback.answer("У вас нет прав.", show_alert=True)
         return
 
@@ -132,7 +132,7 @@ async def admin_start_reply(callback: types.CallbackQuery, state: FSMContext):
 async def admin_send_reply(message: types.Message, state: FSMContext):
     """Ответ организатора на репорт/просьбу."""
 
-    if message.from_user.id not in ADMIN_IDS:
+    if message.from_user.id not in admin_ids_set:
         return
 
     data = await state.get_data()

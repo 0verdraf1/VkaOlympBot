@@ -8,7 +8,7 @@ from aiogram.fsm.context import FSMContext
 from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
 from aiogram.utils.media_group import MediaGroupBuilder
 
-from config import ADMIN_IDS, Support, active_alerts, bot, try_delete
+from config import Support, active_alerts, admin_ids_set, bot, try_delete
 from keyboards import get_main_kb
 
 sys.path.append(os.path.join(os.path.dirname(__file__), '...'))
@@ -73,7 +73,7 @@ async def forward_to_admin(
 
     sent_messages_info = []
 
-    for admin_id in ADMIN_IDS:
+    for admin_id in admin_ids_set:
         try:
             if album:
                 media_group = MediaGroupBuilder()

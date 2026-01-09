@@ -5,7 +5,7 @@ import sys
 from aiogram import F, Router, types
 from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
 
-from config import ADMIN_IDS, active_alerts, bot
+from config import active_alerts, admin_ids_set, bot
 
 sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
 
@@ -46,7 +46,7 @@ async def process_ban_appeal(callback: types.CallbackQuery):
 
     sent_messages_info = []
 
-    for admin_id in ADMIN_IDS:
+    for admin_id in admin_ids_set:
         try:
             sent_msg = await bot.send_message(
                 chat_id=admin_id,

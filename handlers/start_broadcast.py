@@ -9,7 +9,7 @@ from aiogram.fsm.context import FSMContext
 from aiogram.utils.media_group import MediaGroupBuilder
 from sqlalchemy import select
 
-from config import ADMIN_IDS, AdminPanel, bot
+from config import AdminPanel, admin_ids_set, bot
 from keyboards import get_admin_panel_kb
 from models import User, async_session
 
@@ -23,7 +23,7 @@ broad = Router()
 async def start_broadcast(message: types.Message, state: FSMContext):
     """Реакция на нажатие кнопки и ввод сообщения."""
 
-    if message.from_user.id not in ADMIN_IDS:
+    if message.from_user.id not in admin_ids_set:
         return
     await state.set_state(AdminPanel.waiting_for_broadcast_content)
     await message.answer(

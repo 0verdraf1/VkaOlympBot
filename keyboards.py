@@ -6,7 +6,7 @@ from aiogram.types import (
     ReplyKeyboardMarkup,
 )
 
-from config import ADMIN_IDS
+from config import admin_ids_set, ARCHITECT_ID
 
 
 def get_main_kb(user_id: int):
@@ -18,10 +18,26 @@ def get_main_kb(user_id: int):
         [KeyboardButton(text="🔔 Связь с организаторами")],
     ]
 
-    if user_id in ADMIN_IDS:
+    if user_id in admin_ids_set:
         buttons.append([KeyboardButton(text="🦾 Админ-панель")])
 
+    if user_id == ARCHITECT_ID:
+        buttons.append([KeyboardButton(text="🛜 Панель Архитектора")])
+
     return ReplyKeyboardMarkup(keyboard=buttons, resize_keyboard=True)
+
+
+def get_architect_kb():
+    """Панель Архитектора."""
+
+    return ReplyKeyboardMarkup(
+        keyboard=[
+            [KeyboardButton(text="➕ Назначить админа"), KeyboardButton(text="➖ Снять админа")],
+            [KeyboardButton(text="📨 Разослать креды")],
+            [KeyboardButton(text="🏠 На главную")]
+        ],
+        resize_keyboard=True
+    )
 
 
 def get_organizer_kb():
@@ -74,6 +90,7 @@ def get_admin_panel_kb():
     return ReplyKeyboardMarkup(
         keyboard=[
             [KeyboardButton(text="📢 Разослать всем")],
+            [KeyboardButton(text="📊 Выгрузить результаты")],
             [KeyboardButton(text="👤 Общение с участником")],
             [KeyboardButton(text="⛔ Бан участника"), KeyboardButton(text="✅ Разбан участника")],
             [KeyboardButton(text="🏠 На главную")],

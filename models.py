@@ -11,7 +11,7 @@ Base = declarative_base()
 class User(Base):
     """Задание необходимых столбцов в БД."""
 
-    __tablename__ = "users"
+    __tablename__ = "users_bot"
 
     id = Column(Integer, primary_key=True, autoincrement=True)
     telegram_id = Column(BigInteger, unique=True, nullable=False)
@@ -22,17 +22,19 @@ class User(Base):
     school = Column(String, nullable=False)
     grade = Column(String, nullable=False)
     email = Column(String, nullable=False)
+    points = Column(Integer, default=0)
 
     login_id = Column(String, unique=True)
     plain_password = Column(String)
 
     is_banned = Column(Boolean, default=False)
+    is_admin = Column(Boolean, default=False)
 
 
 class BannedUser(Base):
     """Таблица забаненных участников."""
 
-    __tablename__ = "users_banned"
+    __tablename__ = "users_banned_bot"
 
     id = Column(Integer, primary_key=True, autoincrement=True)
     user_id = Column(BigInteger, unique=True, nullable=False)

@@ -7,7 +7,7 @@ from aiogram.fsm.context import FSMContext
 from aiogram.fsm.storage.base import StorageKey
 from sqlalchemy import select
 
-from config import ADMIN_IDS, AdminPanel, UserState, active_dialogs, bot, dp
+from config import AdminPanel, UserState, active_dialogs, admin_ids_set, bot, dp
 from keyboards import get_admin_dialog_kb, get_admin_panel_kb, get_search_method_kb
 from models import User, async_session
 
@@ -21,7 +21,7 @@ search = Router()
 async def start_dialog_search_menu(message: types.Message):
     """Запускает поиск."""
 
-    if message.from_user.id not in ADMIN_IDS:
+    if message.from_user.id not in admin_ids_set:
         return
     await message.answer(
         "Выберите метод поиска участника:",

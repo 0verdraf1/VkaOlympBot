@@ -1,41 +1,38 @@
 """Логика бана и разбана участников."""
-import os
 import sys
+import os
 from typing import List
-
-from aiogram import F, Router, types
+from aiogram import F, types, Router
 from aiogram.fsm.context import FSMContext
 from aiogram.utils.media_group import MediaGroupBuilder
 from sqlalchemy import select, update
 from sqlalchemy.dialects.postgresql import insert
 
-from config import ADMIN_IDS, AdminBanSystem, banned_ids, bot
+from config import AdminBanSystem, bot, banned_ids, admin_ids_set, ARCHITECT_ID
 from keyboards import get_admin_panel_kb, get_search_method_kb
-from models import BannedUser, User, async_session
+from models import User, BannedUser, async_session
 
-sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
-
+sys.path.append(os.path.join(os.path.dirname(__file__), ".."))
 
 admin_ban_router = Router()
 
 
 @admin_ban_router.message(F.text == "⛔ Бан участника")
 async def start_ban_process(message: types.Message, state: FSMContext):
-    """Бан участника."""
+    """Запуск стейта бана."""
 
-    if message.from_user.id not in ADMIN_IDS:
+    if message.from_user.id not in admin_ids_set:
         return
 
     await message.answer(
-        "Выберите метод поиска участника для БАНА:",
-        reply_markup=get_search_method_kb()
+        "Выберите метод поиска участника для БАНА:", reply_markup=get_search_method_kb()
     )
     await state.set_state(AdminBanSystem.waiting_for_ban_search_method)
 
 
 @admin_ban_router.callback_query(AdminBanSystem.waiting_for_ban_search_method)
 async def ban_method_chosen(callback: types.CallbackQuery, state: FSMContext):
-    """Выбор метода бана (по username/id)."""
+    """Выбор метода поиска участника."""
 
     if callback.data == "search_by_id":
         await state.set_state(AdminBanSystem.waiting_for_ban_user_id)
@@ -51,7 +48,9 @@ async def process_ban_id(message: types.Message, state: FSMContext):
     """Поиск по id."""
 
     if not message.text.isdigit():
-        await message.answer("ID должен быть числом.")
+        await message.answer(
+            "⚠️ ID должен состоять только из цифр.\nПопробуйте еще раз:"
+        )
         return
 
     user_id = int(message.text)
@@ -62,14 +61,23 @@ async def process_ban_id(message: types.Message, state: FSMContext):
 async def process_ban_username(message: types.Message, state: FSMContext):
     """Поиск по username."""
 
+    if not message.text.startswith("@"):
+        await message.answer(
+            "⚠️ Имя пользователя должно начинаться с <b>@</b>.\nПопробуйте еще раз:",
+            parse_mode="HTML",
+        )
+        return
+
     username = message.text.strip().replace("@", "")
     await check_and_proceed_ban(message, state, username=username)
 
 
-async def check_and_proceed_ban(message: types.Message, state: FSMContext, user_id=None, username=None):
-    """Проверка на налчиие в базе и переход к причине бана."""
-
+async def check_and_proceed_ban(
+    message: types.Message, state: FSMContext, user_id=None, username=None
+):
     async with async_session() as session:
+        """Общая првоерка и переход к причине."""
+
         query = select(User)
         if user_id:
             query = query.where(User.telegram_id == user_id)
@@ -80,7 +88,18 @@ async def check_and_proceed_ban(message: types.Message, state: FSMContext, user_
         user = result.scalar()
 
     if not user:
-        await message.answer("❌ Пользователь не найден в базе.", reply_markup=get_admin_panel_kb())
+        await message.answer(
+            "❌ Пользователь не найден в базе данных.\n"
+            "Проверьте данные и введите их снова (или нажмите 'На главную' для отмены):"
+        )
+        return
+
+    if user.telegram_id in admin_ids_set or user.telegram_id == ARCHITECT_ID:
+        await message.answer(
+            "⚠️ <b>Этот человек, как и вы, является админом.</b>\n"
+            "Вы не можете выдать ему бан.",
+            parse_mode="HTML"
+        )
         await state.clear()
         return
 
@@ -92,7 +111,7 @@ async def check_and_proceed_ban(message: types.Message, state: FSMContext, user_
         f"Пользователь найден: <b>{user.full_name}</b>\n"
         f"ID: <code>{user.telegram_id}</code> {user_sign}\n\n"
         "Введите <b>Причину бана</b>:",
-        parse_mode="HTML"
+        parse_mode="HTML",
     )
 
 
@@ -102,24 +121,21 @@ async def process_ban_reason(message: types.Message, state: FSMContext):
 
     await state.update_data(ban_reason=message.text)
     await state.set_state(AdminBanSystem.waiting_for_ban_proof)
-    await message.answer("Прикрепите <b>доказательства</b> (текст, фото или скриншот):", parse_mode="HTML")
+    await message.answer(
+        "Прикрепите <b>доказательства</b> (текст, фото или скриншот):",
+        parse_mode="HTML",
+    )
 
 
 @admin_ban_router.message(AdminBanSystem.waiting_for_ban_proof, F.text | F.photo)
 async def process_ban_finish(
-    message: types.Message,
-    state: FSMContext,
-    album: List[types.Message] = None
+    message: types.Message, state: FSMContext, album: List[types.Message] = None
 ):
-    """
-    1. Формирование алерта бана;
-    2. Запись в БД;
-    3. Рассылка алерта всем админам.
-    """
+    """Предоставление доказательств бана и окончание."""
 
     data = await state.get_data()
-    target_user: User = data['target_user']
-    reason = data['ban_reason']
+    target_user: User = data["target_user"]
+    reason = data["ban_reason"]
 
     proof_db = ""
     proof_text_for_alert = ""
@@ -127,7 +143,6 @@ async def process_ban_finish(
     if album:
         file_ids = [m.photo[-1].file_id for m in album if m.photo]
         proof_db = f"Album ({len(file_ids)} photos): {', '.join(file_ids)}"
-
         for msg in album:
             if msg.caption:
                 proof_text_for_alert = msg.caption
@@ -145,7 +160,11 @@ async def process_ban_finish(
     if not proof_text_for_alert:
         proof_text_for_alert = "(Без текстового описания, только медиа)"
 
-    admin_username = f"@{message.from_user.username}" if message.from_user.username else "(Без username)"
+    admin_username = (
+        f"@{message.from_user.username}"
+        if message.from_user.username
+        else "(Без username)"
+    )
     admin_info = f"{admin_username}, ID <code>{message.from_user.id}</code>"
     admin_info_db = f"@{message.from_user.username}, ID {message.from_user.id}"
 
@@ -159,20 +178,21 @@ async def process_ban_finish(
             "reason": reason,
             "admin_who_banned": admin_info_db,
             "proof": proof_db,
-            "admin_who_unbanned": None
+            "admin_who_unbanned": None,
         }
 
         insert_stmt = insert(BannedUser).values(**banned_user_data)
         do_update_stmt = insert_stmt.on_conflict_do_update(
-            index_elements=['user_id'],
-            set_=banned_user_data
+            index_elements=["user_id"], set_=banned_user_data
         )
         await session.execute(do_update_stmt)
         await session.commit()
 
     banned_ids.add(target_user.telegram_id)
 
-    target_user_sign = f"@{target_user.username}" if target_user.username else "(Без username)"
+    target_user_sign = (
+        f"@{target_user.username}" if target_user.username else "(Без username)"
+    )
 
     ban_alert = (
         f"⛔ <b>ЗАБАНЕН УЧАСТНИК</b>\n\n"
@@ -184,7 +204,7 @@ async def process_ban_finish(
         f"📂 <b>Доказательства:</b> {proof_text_for_alert}"
     )
 
-    for admin_id in ADMIN_IDS:
+    for admin_id in admin_ids_set:
         try:
             if album:
                 media_group = MediaGroupBuilder()
@@ -192,9 +212,17 @@ async def process_ban_finish(
                 for msg in album:
                     caption = ban_alert if first else None
                     if msg.photo:
-                        media_group.add_photo(media=msg.photo[-1].file_id, caption=caption, parse_mode="HTML")
+                        media_group.add_photo(
+                            media=msg.photo[-1].file_id,
+                            caption=caption,
+                            parse_mode="HTML",
+                        )
                     elif msg.document:
-                        media_group.add_document(media=msg.document.file_id, caption=caption, parse_mode="HTML")
+                        media_group.add_document(
+                            media=msg.document.file_id,
+                            caption=caption,
+                            parse_mode="HTML",
+                        )
                     first = False
                 await bot.send_media_group(chat_id=admin_id, media=media_group.build())
             elif message.photo:
@@ -202,21 +230,27 @@ async def process_ban_finish(
                     chat_id=admin_id,
                     photo=message.photo[-1].file_id,
                     caption=ban_alert,
-                    parse_mode="HTML"
+                    parse_mode="HTML",
                 )
             else:
-                await bot.send_message(chat_id=admin_id, text=ban_alert, parse_mode="HTML")
+                await bot.send_message(
+                    chat_id=admin_id, text=ban_alert, parse_mode="HTML"
+                )
         except Exception:
             pass
 
     await message.answer(
         f"✅ Пользователь <b>{target_user.full_name}</b> успешно забанен.\nУведомление отправлено всем администраторам.",
         reply_markup=get_admin_panel_kb(),
-        parse_mode="HTML"
+        parse_mode="HTML",
     )
 
     try:
-        await bot.send_message(target_user.telegram_id, "⛔ <b>Вы были забанены администратором.</b>", parse_mode="HTML")
+        await bot.send_message(
+            target_user.telegram_id,
+            "⛔ <b>Вы были забанены администратором.</b>",
+            parse_mode="HTML",
+        )
     except Exception:
         pass
 
@@ -225,21 +259,20 @@ async def process_ban_finish(
 
 @admin_ban_router.message(F.text == "✅ Разбан участника")
 async def start_unban_process(message: types.Message, state: FSMContext):
-    """Разбан участника."""
+    """Запуск стейта разбана."""
 
-    if message.from_user.id not in ADMIN_IDS:
+    if message.from_user.id not in admin_ids_set:
         return
-
     await message.answer(
         "Выберите метод поиска участника для РАЗБАНА:",
-        reply_markup=get_search_method_kb()
+        reply_markup=get_search_method_kb(),
     )
     await state.set_state(AdminBanSystem.waiting_for_unban_search_method)
 
 
 @admin_ban_router.callback_query(AdminBanSystem.waiting_for_unban_search_method)
 async def unban_method_chosen(callback: types.CallbackQuery, state: FSMContext):
-    """Выбор метода разбана (по username/id)."""
+    """Выбор метода поиска участника."""
 
     if callback.data == "search_by_id":
         await state.set_state(AdminBanSystem.waiting_for_unban_user_id)
@@ -252,30 +285,41 @@ async def unban_method_chosen(callback: types.CallbackQuery, state: FSMContext):
 
 @admin_ban_router.message(AdminBanSystem.waiting_for_unban_user_id)
 async def process_unban_id(message: types.Message, state: FSMContext):
-    """Поиск по id."""
+    """Разбан по id."""
 
     if not message.text.isdigit():
-        await message.answer("ID должен быть числом.")
+        await message.answer(
+            "⚠️ ID должен состоять только из цифр.\nПопробуйте еще раз:"
+        )
         return
     await process_unban_final(message, state, user_id=int(message.text))
 
 
 @admin_ban_router.message(AdminBanSystem.waiting_for_unban_username)
 async def process_unban_username(message: types.Message, state: FSMContext):
-    """Поиск по username."""
+    """Разбан по username."""
+
+    if not message.text.startswith("@"):
+        await message.answer(
+            "⚠️ Имя пользователя должно начинаться с <b>@</b>.\nПопробуйте еще раз:",
+            parse_mode="HTML",
+        )
+        return
 
     username = message.text.strip().replace("@", "")
     await process_unban_final(message, state, username=username)
 
 
-async def process_unban_final(message: types.Message, state: FSMContext, user_id=None, username=None):
-    """
-    1. Формирование алерта разбана;
-    2. Запись в БД;
-    3. Рассылка алерта всем админам.
-    """
+async def process_unban_final(
+    message: types.Message, state: FSMContext, user_id=None, username=None
+):
+    """Окончание процесса разбана."""
 
-    admin_username = f"@{message.from_user.username}" if message.from_user.username else "(Без username)"
+    admin_username = (
+        f"@{message.from_user.username}"
+        if message.from_user.username
+        else "(Без username)"
+    )
     admin_info = f"{admin_username}, ID <code>{message.from_user.id}</code>"
     admin_info_db = f"@{message.from_user.username}, ID {message.from_user.id}"
 
@@ -290,13 +334,16 @@ async def process_unban_final(message: types.Message, state: FSMContext, user_id
         user = result.scalar()
 
         if not user:
-            await message.answer("❌ Пользователь не найден.", reply_markup=get_admin_panel_kb())
-            await state.clear()
+            await message.answer(
+                "❌ Пользователь не найден.\nПроверьте данные и попробуйте снова:"
+            )
             return
 
         user.is_banned = False
-        stmt = update(BannedUser).where(BannedUser.user_id == user.telegram_id).values(
-            admin_who_unbanned=admin_info_db
+        stmt = (
+            update(BannedUser)
+            .where(BannedUser.user_id == user.telegram_id)
+            .values(admin_who_unbanned=admin_info_db)
         )
         await session.execute(stmt)
         await session.commit()
@@ -313,19 +360,25 @@ async def process_unban_final(message: types.Message, state: FSMContext, user_id
         f"👮‍♂️ <b>Кто разбанил:</b> {admin_info}"
     )
 
-    for admin_id in ADMIN_IDS:
+    for admin_id in admin_ids_set:
         try:
-            await bot.send_message(chat_id=admin_id, text=unban_alert, parse_mode="HTML")
+            await bot.send_message(
+                chat_id=admin_id, text=unban_alert, parse_mode="HTML"
+            )
         except Exception:
             pass
 
     await message.answer(
         f"✅ Пользователь <b>{user.full_name}</b> успешно разбанен.",
         parse_mode="HTML",
-        reply_markup=get_admin_panel_kb()
+        reply_markup=get_admin_panel_kb(),
     )
     try:
-        await bot.send_message(user.telegram_id, "✅ <b>Вы были разбанены!</b> Доступ восстановлен.", parse_mode="HTML")
+        await bot.send_message(
+            user.telegram_id,
+            "✅ <b>Вы были разбанены!</b> Доступ восстановлен.",
+            parse_mode="HTML",
+        )
     except Exception:
         pass
 

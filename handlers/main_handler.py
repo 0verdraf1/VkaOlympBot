@@ -10,6 +10,7 @@ from .get_creds import get_creds
 from .registration import registration
 from .search_dialog import search
 from .start_admin import start_admin
+from .start_architect import architect_router
 from .start_broadcast import broad
 from .type_call.help import user_help
 from .type_call.report import user_rep
@@ -23,6 +24,7 @@ router = Router()
 router.include_router(common_router)
 router.include_router(ban_appeal_router)
 router.include_router(admin_ban_router)
+router.include_router(architect_router)
 
 # 2. Диалоги
 router.include_router(admin_to_user)

@@ -9,8 +9,13 @@ from dotenv import load_dotenv
 
 load_dotenv()
 API_TOKEN = os.getenv("API_TOKEN")
-admin_ids_str = os.getenv("ADMIN_IDS", "")
-ADMIN_IDS = [int(id) for id in admin_ids_str.split()] if admin_ids_str else []
+
+env_admin_ids_str = os.getenv("ENV_ADMIN_IDS", "")
+ENV_ADMIN_IDS = [int(id) for id in env_admin_ids_str.split()] if env_admin_ids_str else []
+
+architect_id_str = os.getenv("ARCHITECT_ID", "")
+ARCHITECT_ID = int(architect_id_str) if architect_id_str else 0
+
 DATABASE_URL = os.getenv("DATABASE_URL")
 
 logging.basicConfig(level=logging.INFO)
@@ -22,6 +27,10 @@ active_alerts: dict[int, list[list[tuple[int, int]]]] = {}
 active_dialogs: dict[int, int] = {}
 
 banned_ids: set[int] = set()
+
+admin_ids_set: set[int] = set(ENV_ADMIN_IDS)
+if ARCHITECT_ID:
+    admin_ids_set.add(ARCHITECT_ID)
 
 GRADES = [f"{i} класс" for i in range(1, 12)] + [f"{i} курс" for i in range(1, 5)]
 
@@ -79,7 +88,21 @@ class AdminBanSystem(StatesGroup):
 
 
 class AdminState(StatesGroup):
+    """Состояние для админа."""
+
     waiting_for_reply = State()
+
+
+class ArchitectState(StatesGroup):
+    """Состояние для архитектора."""
+
+    waiting_for_promote_search_method = State()
+    waiting_for_promote_user_id = State()
+    waiting_for_promote_username = State()
+
+    waiting_for_demote_search_method = State()
+    waiting_for_demote_user_id = State()
+    waiting_for_demote_username = State()
 
 
 class UserState(StatesGroup):
