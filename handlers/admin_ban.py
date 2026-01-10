@@ -6,7 +6,7 @@ from aiogram import F, types, Router
 from aiogram.fsm.context import FSMContext
 from aiogram.utils.media_group import MediaGroupBuilder
 from sqlalchemy import select, update
-from sqlalchemy.dialects.postgresql import insert
+from sqlalchemy.dialects.mysql import insert
 
 from config import AdminBanSystem, bot, banned_ids, admin_ids_set, ARCHITECT_ID
 from keyboards import get_admin_panel_kb, get_search_method_kb
@@ -182,8 +182,8 @@ async def process_ban_finish(
         }
 
         insert_stmt = insert(BannedUser).values(**banned_user_data)
-        do_update_stmt = insert_stmt.on_conflict_do_update(
-            index_elements=["user_id"], set_=banned_user_data
+        do_update_stmt = insert_stmt.on_duplicate_key_update(
+            **banned_user_data
         )
         await session.execute(do_update_stmt)
         await session.commit()

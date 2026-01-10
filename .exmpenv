@@ -2,4 +2,4 @@
 API_TOKEN="222222222:ApITOken"
 ENV_ADMIN_IDS=1111111111 # If you want
 ARCHITECT_ID=853162163 # Only one is better!
-DATABASE_URL = "postgresql+asyncpg://user_db:passwd@localhost/db_name"
+DATABASE_URL = "mysql+aiomysql://user:password@host:3306/db_name"
